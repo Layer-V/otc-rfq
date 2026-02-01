@@ -10,8 +10,14 @@
 //!
 //! ## Numeric Types
 //!
-//! - `Price`: Decimal price with checked arithmetic
-//! - `Quantity`: Decimal quantity with checked arithmetic
+//! - [`Price`]: Decimal price with checked arithmetic
+//! - [`Quantity`]: Decimal quantity with checked arithmetic
+//!
+//! ## Arithmetic
+//!
+//! - [`ArithmeticError`]: Error type for arithmetic failures
+//! - [`CheckedArithmetic`]: Trait for safe arithmetic operations
+//! - [`Rounding`]: Enum for explicit rounding direction
 //!
 //! ## Domain Enums
 //!
@@ -30,4 +36,7 @@ pub mod rfq_state;
 pub mod symbol;
 pub mod timestamp;
 
+pub use arithmetic::{div_round, ArithmeticError, ArithmeticResult, CheckedArithmetic, Rounding};
 pub use ids::{CounterpartyId, EventId, QuoteId, RfqId, TradeId, VenueId};
+pub use price::Price;
+pub use quantity::Quantity;
