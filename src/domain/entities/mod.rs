@@ -22,3 +22,4 @@ pub mod venue;
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
 pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
 pub use trade::{InvalidSettlementStateError, SettlementState, Trade};
+pub use venue::{InvalidVenueHealthError, Venue, VenueConfig, VenueHealth, VenueMetrics};
