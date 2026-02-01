@@ -4,7 +4,7 @@
 //!
 //! ## Aggregates
 //!
-//! - `Rfq`: Request-for-Quote aggregate with state machine
+//! - [`Rfq`]: Request-for-Quote aggregate with state machine
 //! - `Trade`: Executed trade aggregate
 //! - `Venue`: Liquidity venue configuration
 //!
@@ -20,3 +20,4 @@ pub mod trade;
 pub mod venue;
 
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
+pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
