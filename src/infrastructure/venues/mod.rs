@@ -1,6 +1,22 @@
 //! # Venue Adapters
 //!
 //! Implementations of the VenueAdapter trait for different liquidity sources.
+//!
+//! ## Core Types
+//!
+//! - [`VenueAdapter`]: Trait defining the interface for venue integrations
+//! - [`VenueError`]: Error type for venue operations
+//! - [`VenueResult`]: Result type alias for venue operations
+//! - [`ExecutionResult`]: Result of a trade execution
+//! - [`VenueHealth`]: Health information for a venue
+//! - [`VenueHealthStatus`]: Health status enum
+//!
+//! ## Implementations
+//!
+//! - `dex`: DEX aggregator adapters
+//! - `rfq_protocols`: RFQ protocol adapters (Hashflow, Bebop)
+//! - `internal_mm`: Internal market maker adapter
+//! - `fix_adapter`: FIX protocol adapter
 
 pub mod dex;
 pub mod error;
@@ -10,3 +26,6 @@ pub mod internal_mm;
 pub mod registry;
 pub mod rfq_protocols;
 pub mod traits;
+
+pub use error::{VenueError, VenueResult};
+pub use traits::{ExecutionResult, VenueAdapter, VenueHealth, VenueHealthStatus};
