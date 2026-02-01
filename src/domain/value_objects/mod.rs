@@ -31,6 +31,10 @@
 //!
 //! - [`Symbol`]: Trading pair representation (e.g., BTC/USD)
 //! - [`Instrument`]: Tradeable instrument with metadata
+//!
+//! ## Time Types
+//!
+//! - [`Timestamp`]: UTC timestamp with nanosecond precision
 
 pub mod arithmetic;
 pub mod compliance;
@@ -50,3 +54,4 @@ pub use instrument::{Instrument, InstrumentBuilder};
 pub use price::Price;
 pub use quantity::Quantity;
 pub use symbol::{Symbol, SymbolError};
+pub use timestamp::Timestamp;
