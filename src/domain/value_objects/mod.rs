@@ -32,9 +32,9 @@
 //! - [`Symbol`]: Trading pair representation (e.g., BTC/USD)
 //! - [`Instrument`]: Tradeable instrument with metadata
 //!
-//! ## Time Types
+//! ## State Types
 //!
-//! - [`Timestamp`]: UTC timestamp with nanosecond precision
+//! - [`RfqState`]: RFQ lifecycle state machine
 
 pub mod arithmetic;
 pub mod compliance;
@@ -53,5 +53,5 @@ pub use ids::{CounterpartyId, EventId, QuoteId, RfqId, TradeId, VenueId};
 pub use instrument::{Instrument, InstrumentBuilder};
 pub use price::Price;
 pub use quantity::Quantity;
+pub use rfq_state::{InvalidRfqStateError, RfqState};
 pub use symbol::{Symbol, SymbolError};
-pub use timestamp::Timestamp;
