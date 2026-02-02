@@ -27,3 +27,7 @@ pub use ranking_strategy::{
     BestPriceStrategy, CompositeStrategy, CompositeStrategyBuilder, CostConfig, LowestCostStrategy,
     LowestSlippageStrategy, RankedQuote, RankingStrategy, WeightedScoreStrategy,
 };
+pub use retry::{
+    execute_with_retry, AlwaysRetryable, NeverRetryable, RetryError, RetryPolicy, RetryResult,
+    Retryable,
+};
