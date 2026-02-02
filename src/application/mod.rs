@@ -23,6 +23,10 @@ pub mod use_cases;
 
 pub use dto::{CreateRfqRequest, CreateRfqResponse};
 pub use error::{ApplicationError, ApplicationResult};
+pub use services::{
+    AggregationConfig, AggregationError, AggregationResult, BestPriceStrategy,
+    QuoteAggregationEngine, RankedQuote, RankingStrategy, WeightedScoreStrategy,
+};
 pub use use_cases::{
     ClientRepository, CollectQuotesConfig, CollectQuotesResponse, CollectQuotesUseCase,
     ComplianceService, CreateRfqUseCase, EventPublisher, InstrumentRegistry, QuoteEventPublisher,
