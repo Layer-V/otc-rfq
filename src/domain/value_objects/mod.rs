@@ -52,6 +52,9 @@ pub mod rfq_state;
 pub mod symbol;
 pub mod timestamp;
 
+#[cfg(test)]
+mod tests;
+
 pub use arithmetic::{div_round, ArithmeticError, ArithmeticResult, CheckedArithmetic, Rounding};
 pub use compliance::{ComplianceCheckResults, ComplianceCheckResultsBuilder, RegulatoryFlag};
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
