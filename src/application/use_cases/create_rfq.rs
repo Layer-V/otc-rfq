@@ -455,7 +455,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             result.unwrap_err(),
-            ApplicationError::ValidationError(_)
+            ApplicationError::Validation(_)
         ));
     }
 }
