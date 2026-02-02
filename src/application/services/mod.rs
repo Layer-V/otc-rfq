@@ -16,5 +16,6 @@ pub use quote_aggregation::{
     AggregationConfig, AggregationError, AggregationResult, QuoteAggregationEngine,
 };
 pub use ranking_strategy::{
-    BestPriceStrategy, RankedQuote, RankingStrategy, WeightedScoreStrategy,
+    BestPriceStrategy, CompositeStrategy, CompositeStrategyBuilder, CostConfig, LowestCostStrategy,
+    LowestSlippageStrategy, RankedQuote, RankingStrategy, WeightedScoreStrategy,
 };
