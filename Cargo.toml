@@ -135,7 +135,7 @@ ethers = { version = "2.0", features = ["rustls"] }
 reqwest = { version = "0.13", features = ["json", "rustls"] }
 
 # Authentication
-jsonwebtoken = "10.3"
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 
 # Configuration
 config = "0.15"
