@@ -37,6 +37,8 @@ use tokio::sync::RwLock;
 /// Configuration for a registered venue.
 #[derive(Debug, Clone)]
 pub struct VenueConfig {
+    /// Venue identifier.
+    venue_id: VenueId,
     /// Whether this venue is enabled.
     enabled: bool,
     /// Priority for venue selection (lower is higher priority).
@@ -46,10 +48,11 @@ pub struct VenueConfig {
 }
 
 impl VenueConfig {
-    /// Creates a new venue configuration.
+    /// Creates a new venue configuration with the given venue ID.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(venue_id: VenueId) -> Self {
         Self {
+            venue_id,
             enabled: true,
             priority: 100,
             supported_instruments: Vec::new(),
@@ -58,12 +61,20 @@ impl VenueConfig {
 
     /// Creates a disabled configuration.
     #[must_use]
-    pub fn disabled() -> Self {
+    pub fn disabled(venue_id: VenueId) -> Self {
         Self {
+            venue_id,
             enabled: false,
             priority: 100,
             supported_instruments: Vec::new(),
         }
+    }
+
+    /// Returns the venue ID.
+    #[inline]
+    #[must_use]
+    pub fn venue_id(&self) -> &VenueId {
+        &self.venue_id
     }
 
     /// Sets whether the venue is enabled.
@@ -118,12 +129,6 @@ impl VenueConfig {
     }
 }
 
-impl Default for VenueConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Entry in the venue registry.
 struct RegistryEntry {
     adapter: Arc<dyn VenueAdapter>,
@@ -144,7 +149,7 @@ struct RegistryEntry {
 ///
 /// // Register adapters
 /// registry.register(adapter1);
-/// registry.register_with_config(adapter2, VenueConfig::new().with_priority(50));
+/// registry.register_with_config(adapter2, VenueConfig::new(venue_id).with_priority(50));
 ///
 /// // Get available adapters
 /// let available = registry.get_available().await;
@@ -169,7 +174,8 @@ impl VenueRegistry {
     /// If an adapter with the same venue ID is already registered,
     /// it will be replaced.
     pub async fn register(&self, adapter: Arc<dyn VenueAdapter>) {
-        self.register_with_config(adapter, VenueConfig::default())
+        let venue_id = adapter.venue_id().clone();
+        self.register_with_config(adapter, VenueConfig::new(venue_id))
             .await;
     }
 
@@ -424,27 +430,28 @@ mod tests {
 
         #[test]
         fn default_config() {
-            let config = VenueConfig::new();
+            let config = VenueConfig::new(VenueId::new("test"));
             assert!(config.is_enabled());
             assert_eq!(config.priority(), 100);
             assert!(config.supported_instruments().is_empty());
+            assert_eq!(config.venue_id(), &VenueId::new("test"));
         }
 
         #[test]
         fn disabled_config() {
-            let config = VenueConfig::disabled();
+            let config = VenueConfig::disabled(VenueId::new("test"));
             assert!(!config.is_enabled());
         }
 
         #[test]
         fn with_priority() {
-            let config = VenueConfig::new().with_priority(50);
+            let config = VenueConfig::new(VenueId::new("test")).with_priority(50);
             assert_eq!(config.priority(), 50);
         }
 
         #[test]
         fn supports_instrument_empty() {
-            let config = VenueConfig::new();
+            let config = VenueConfig::new(VenueId::new("test"));
             let instrument = test_instrument();
             assert!(config.supports_instrument(&instrument));
         }
@@ -452,7 +459,8 @@ mod tests {
         #[test]
         fn supports_instrument_specific() {
             let instrument = test_instrument();
-            let config = VenueConfig::new().with_instruments(vec![instrument.clone()]);
+            let config =
+                VenueConfig::new(VenueId::new("test")).with_instruments(vec![instrument.clone()]);
             assert!(config.supports_instrument(&instrument));
         }
     }
@@ -530,7 +538,7 @@ mod tests {
             registry
                 .register_with_config(
                     Arc::new(MockAdapter::new("venue-2")),
-                    VenueConfig::disabled(),
+                    VenueConfig::disabled(VenueId::new("venue-2")),
                 )
                 .await;
 
@@ -568,7 +576,8 @@ mod tests {
             registry
                 .register_with_config(
                     Arc::new(MockAdapter::new("venue-2")),
-                    VenueConfig::new().with_instruments(vec![instrument.clone()]),
+                    VenueConfig::new(VenueId::new("venue-2"))
+                        .with_instruments(vec![instrument.clone()]),
                 )
                 .await;
 
@@ -597,13 +606,13 @@ mod tests {
             registry
                 .register_with_config(
                     Arc::new(MockAdapter::new("venue-low")),
-                    VenueConfig::new().with_priority(200),
+                    VenueConfig::new(VenueId::new("venue-low")).with_priority(200),
                 )
                 .await;
             registry
                 .register_with_config(
                     Arc::new(MockAdapter::new("venue-high")),
-                    VenueConfig::new().with_priority(50),
+                    VenueConfig::new(VenueId::new("venue-high")).with_priority(50),
                 )
                 .await;
 
@@ -651,7 +660,7 @@ mod tests {
             let updated = registry
                 .update_config(
                     &VenueId::new("venue-1"),
-                    VenueConfig::new().with_priority(10),
+                    VenueConfig::new(VenueId::new("venue-1")).with_priority(10),
                 )
                 .await;
             assert!(updated);
