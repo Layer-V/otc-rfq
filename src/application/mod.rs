@@ -22,7 +22,7 @@ pub mod services;
 pub mod use_cases;
 
 pub use dto::{CreateRfqRequest, CreateRfqResponse};
-pub use error::{ApplicationError, ApplicationResult};
+pub use error::{ApplicationError, ApplicationResult, InfrastructureError};
 pub use services::{
     execute_with_retry, AggregationConfig, AggregationError, AggregationResult, AlwaysRetryable,
     AmlProvider, AmlResult, BestPriceStrategy, CircuitBreaker, CircuitBreakerConfig,
