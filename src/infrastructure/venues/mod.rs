@@ -14,6 +14,9 @@
 //! - [`VenueConfig`]: Configuration for registered venues
 //! - [`InternalMMAdapter`]: Internal market maker adapter
 //! - [`InternalMMConfig`]: Configuration for internal market maker
+//! - [`FixMMAdapter`]: FIX protocol market maker adapter
+//! - [`FixMMConfig`]: Configuration for FIX market maker
+//! - [`FixSessionConfig`]: FIX session configuration
 //!
 //! ## Implementations
 //!
@@ -32,6 +35,8 @@ pub mod rfq_protocols;
 pub mod traits;
 
 pub use error::{VenueError, VenueResult};
+pub use fix_adapter::{FixMMAdapter, SessionState};
+pub use fix_config::{FixMMConfig, FixSessionConfig, FixVersion, LogonCredentials, TlsConfig};
 pub use internal_mm::{InternalMMAdapter, InternalMMConfig};
 pub use registry::{VenueConfig, VenueRegistry};
 pub use traits::{ExecutionResult, VenueAdapter, VenueHealth, VenueHealthStatus};
