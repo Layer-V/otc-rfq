@@ -1,0 +1,101 @@
+# =============================================================================
+# OTC-RFQ Service - Docker Compose Configuration
+# =============================================================================
+# Service orchestration for local development and testing
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # OTC-RFQ Service (Production Build)
+  # ---------------------------------------------------------------------------
+  otc-rfq:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
+    image: otc-rfq:latest
+    container_name: otc-rfq
+    restart: unless-stopped
+    ports:
+      - "8080:8080" # HTTP API
+      - "50051:50051" # gRPC
+      - "9090:9090" # Metrics
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+      - OTC_RFQ_CONFIG_PATH=/app/config
+      - OTC_RFQ_DATA_PATH=/app/data
+      - OTC_RFQ_LOG_PATH=/app/logs
+    volumes:
+      - ../config:/app/config:ro
+      - otc-rfq-data:/app/data
+      - otc-rfq-logs:/app/logs
+    networks:
+      - otc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # OTC-RFQ Service (Development Build with Hot Reload)
+  # ---------------------------------------------------------------------------
+  otc-rfq-dev:
+    build:
+      context: ..
+      dockerfile: Docker/dev.Dockerfile
+    image: otc-rfq:dev
+    container_name: otc-rfq-dev
+    ports:
+      - "8080:8080" # HTTP API
+      - "50051:50051" # gRPC
+      - "9090:9090" # Metrics
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=full
+      - CARGO_HOME=/home/dev/.cargo
+    volumes:
+      - ..:/app:cached
+      - cargo-cache:/home/dev/.cargo
+      - target-cache:/app/target
+    networks:
+      - otc-network
+    profiles:
+      - dev
+    stdin_open: true
+    tty: true
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  otc-network:
+    driver: bridge
+    name: otc-network
+
+# -----------------------------------------------------------------------------
+# Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  otc-rfq-data:
+    name: otc-rfq-data
+  otc-rfq-logs:
+    name: otc-rfq-logs
+  cargo-cache:
+    name: otc-rfq-cargo-cache
+  target-cache:
+    name: otc-rfq-target-cache
