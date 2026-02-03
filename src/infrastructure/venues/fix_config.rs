@@ -1,9 +1,15 @@
 //! # FIX Configuration
 //!
-//! Configuration for FIX sessions.
+//! Configuration for FIX sessions using IronFix.
 //!
 //! This module provides configuration types for FIX protocol sessions
 //! including session parameters, TLS settings, and timeout configuration.
+//!
+//! # IronFix Integration
+//!
+//! The configuration types in this module are designed to work with IronFix:
+//! - [`FixSessionConfig`] provides session parameters compatible with `ironfix_session::SessionConfig`
+//! - [`FixVersion`] maps to IronFix's FIX version strings
 //!
 //! # Examples
 //!
