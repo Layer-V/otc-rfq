@@ -99,21 +99,19 @@ mod zero_x_tests {
     }
 
     #[tokio::test]
-    async fn quote_request_returns_stub_error() {
-        // The adapter currently returns a stub error since HTTP client isn't implemented
+    async fn quote_request_returns_error_for_invalid_api() {
+        // The adapter makes real HTTP requests, so with invalid API key it will fail
         let config = ZeroXConfig::new("test-api-key")
             .with_chain(ZeroXChain::Ethereum)
-            .with_timeout_ms(5000);
+            .with_timeout_ms(1000);
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         let rfq = create_test_rfq();
 
         let result = adapter.request_quote(&rfq).await;
 
-        // Expected to fail with "not yet implemented" until HTTP client is added
+        // Expected to fail with network or auth error
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("not yet implemented"));
     }
 
     #[tokio::test]
@@ -132,15 +130,18 @@ mod zero_x_tests {
     }
 
     #[tokio::test]
-    async fn health_check_enabled() {
+    async fn health_check_returns_result() {
+        // Health check makes real HTTP request, result depends on network
         let config = ZeroXConfig::new("test-api-key")
             .with_chain(ZeroXChain::Ethereum)
-            .with_enabled(true);
+            .with_enabled(true)
+            .with_timeout_ms(1000);
 
-        let adapter = ZeroXAdapter::new(config);
-        let health = adapter.health_check().await.unwrap();
+        let adapter = ZeroXAdapter::new(config).unwrap();
+        let health = adapter.health_check().await;
 
-        assert!(health.is_healthy());
+        // Should return Ok regardless of health status
+        assert!(health.is_ok());
     }
 
     #[tokio::test]
@@ -149,7 +150,7 @@ mod zero_x_tests {
             .with_chain(ZeroXChain::Ethereum)
             .with_enabled(false);
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         let health = adapter.health_check().await.unwrap();
 
         assert!(!health.is_healthy());
@@ -161,7 +162,7 @@ mod zero_x_tests {
             .with_chain(ZeroXChain::Ethereum)
             .with_enabled(false);
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         let rfq = create_test_rfq();
 
         let result = adapter.request_quote(&rfq).await;
@@ -173,7 +174,7 @@ mod zero_x_tests {
     async fn venue_id_correct() {
         let config = ZeroXConfig::new("test-api-key").with_venue_id("custom-0x-venue");
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         assert_eq!(adapter.venue_id(), &VenueId::new("custom-0x-venue"));
     }
 
@@ -181,7 +182,7 @@ mod zero_x_tests {
     async fn timeout_configuration() {
         let config = ZeroXConfig::new("test-api-key").with_timeout_ms(10000);
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         assert_eq!(adapter.timeout_ms(), 10000);
     }
 }
@@ -237,35 +238,34 @@ mod one_inch_tests {
     }
 
     #[tokio::test]
-    async fn quote_request_returns_stub_error() {
-        // The adapter currently returns a stub error since HTTP client isn't implemented
+    async fn quote_request_returns_error_for_invalid_api() {
+        // The adapter makes real HTTP requests, so with invalid API key it will fail
         let config = OneInchConfig::new("test-api-key")
             .with_chain(OneInchChain::Ethereum)
-            .with_timeout_ms(5000);
+            .with_timeout_ms(1000);
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         let rfq = create_test_rfq();
 
         let result = adapter.request_quote(&rfq).await;
+
+        // Expected to fail with network or auth error
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("not yet implemented")
-        );
     }
 
     #[tokio::test]
-    async fn health_check_enabled() {
+    async fn health_check_returns_result() {
+        // Health check makes real HTTP request, result depends on network
         let config = OneInchConfig::new("test-api-key")
             .with_chain(OneInchChain::Ethereum)
-            .with_enabled(true);
+            .with_enabled(true)
+            .with_timeout_ms(1000);
 
-        let adapter = OneInchAdapter::new(config);
-        let health = adapter.health_check().await.unwrap();
+        let adapter = OneInchAdapter::new(config).unwrap();
+        let health = adapter.health_check().await;
 
-        assert!(health.is_healthy());
+        // Should return Ok regardless of health status
+        assert!(health.is_ok());
     }
 
     #[tokio::test]
@@ -274,7 +274,7 @@ mod one_inch_tests {
             .with_chain(OneInchChain::Ethereum)
             .with_enabled(false);
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         let health = adapter.health_check().await.unwrap();
 
         assert!(!health.is_healthy());
@@ -286,7 +286,7 @@ mod one_inch_tests {
             .with_chain(OneInchChain::Ethereum)
             .with_enabled(false);
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         let rfq = create_test_rfq();
 
         let result = adapter.request_quote(&rfq).await;
@@ -314,7 +314,7 @@ mod one_inch_tests {
     async fn venue_id_correct() {
         let config = OneInchConfig::new("test-api-key").with_venue_id("custom-1inch-venue");
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         assert_eq!(adapter.venue_id(), &VenueId::new("custom-1inch-venue"));
     }
 }
@@ -468,7 +468,7 @@ mod timeout_tests {
     async fn zero_x_timeout_configuration() {
         let config = ZeroXConfig::new("test-api-key").with_timeout_ms(1000);
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         assert_eq!(adapter.timeout_ms(), 1000);
     }
 
@@ -476,7 +476,7 @@ mod timeout_tests {
     async fn one_inch_timeout_configuration() {
         let config = OneInchConfig::new("test-api-key").with_timeout_ms(2000);
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         assert_eq!(adapter.timeout_ms(), 2000);
     }
 
@@ -605,7 +605,7 @@ mod quote_validation_tests {
     async fn zero_x_execute_wrong_venue_quote() {
         let config = ZeroXConfig::new("test-api-key").with_venue_id("0x-aggregator");
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
         let quote = create_test_quote("different-venue");
 
         let result = adapter.execute_trade(&quote).await;
@@ -622,7 +622,7 @@ mod quote_validation_tests {
     async fn one_inch_execute_wrong_venue_quote() {
         let config = OneInchConfig::new("test-api-key").with_venue_id("1inch-aggregator");
 
-        let adapter = OneInchAdapter::new(config);
+        let adapter = OneInchAdapter::new(config).unwrap();
         let quote = create_test_quote("different-venue");
 
         let result = adapter.execute_trade(&quote).await;
@@ -656,7 +656,7 @@ mod quote_validation_tests {
     async fn execute_expired_quote() {
         let config = ZeroXConfig::new("test-api-key").with_venue_id("0x-aggregator");
 
-        let adapter = ZeroXAdapter::new(config);
+        let adapter = ZeroXAdapter::new(config).unwrap();
 
         // Create an expired quote
         let expired_quote = QuoteBuilder::new(

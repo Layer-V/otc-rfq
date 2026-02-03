@@ -30,6 +30,7 @@ use crate::domain::entities::rfq::Rfq;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{Blockchain, OrderSide, Price, VenueId};
 use crate::infrastructure::venues::error::{VenueError, VenueResult};
+use crate::infrastructure::venues::http_client::HttpClient;
 use crate::infrastructure::venues::traits::{ExecutionResult, VenueAdapter, VenueHealth};
 use async_trait::async_trait;
 use rust_decimal::prelude::*;
@@ -471,20 +472,30 @@ impl Default for ParaswapConfig {
 ///
 /// Implements the [`VenueAdapter`] trait for the Paraswap Protocol.
 ///
-/// # Note
+/// # Features
 ///
-/// This is a stub implementation. Full HTTP client integration
-/// will be completed with reqwest.
+/// - HTTP client for Paraswap API
+/// - Quote endpoint integration
+/// - Multi-chain support
 pub struct ParaswapAdapter {
     /// Configuration.
     config: ParaswapConfig,
+    /// HTTP client for API requests.
+    http_client: HttpClient,
 }
 
 impl ParaswapAdapter {
     /// Creates a new Paraswap adapter.
-    #[must_use]
-    pub fn new(config: ParaswapConfig) -> Self {
-        Self { config }
+    ///
+    /// # Errors
+    ///
+    /// Returns `VenueError::InternalError` if the HTTP client cannot be created.
+    pub fn new(config: ParaswapConfig) -> VenueResult<Self> {
+        let http_client = HttpClient::new(config.timeout_ms())?;
+        Ok(Self {
+            config,
+            http_client,
+        })
     }
 
     /// Returns the configuration.
@@ -696,19 +707,30 @@ impl VenueAdapter for ParaswapAdapter {
         }
 
         // Resolve token addresses
-        let (_src_token, _dest_token) = self.resolve_tokens(rfq)?;
+        let (src_token, dest_token) = self.resolve_tokens(rfq)?;
 
         // Convert quantity to smallest unit (assuming 18 decimals)
-        let _amount = self.to_smallest_unit(rfq.quantity().get(), 18);
+        let amount = self.to_smallest_unit(rfq.quantity().get(), 18);
+
+        // Build query parameters
+        let chain_id = self.config.chain().chain_id().to_string();
+        let params = [
+            ("srcToken", src_token.as_str()),
+            ("destToken", dest_token.as_str()),
+            ("amount", amount.as_str()),
+            ("network", chain_id.as_str()),
+            ("side", "SELL"),
+        ];
 
         // Build prices URL
-        let _url = self.build_prices_url();
+        let url = self.build_prices_url();
 
-        // TODO: Make HTTP request to Paraswap API
-        // For now, return a stub error indicating not implemented
-        Err(VenueError::internal_error(
-            "Paraswap API integration not yet implemented - requires HTTP client",
-        ))
+        // Make HTTP request to Paraswap API
+        let response: ParaswapQuoteResponse =
+            self.http_client.get_with_params(&url, &params).await?;
+
+        // Parse response into Quote
+        self.parse_quote_response(response, rfq)
     }
 
     async fn execute_trade(&self, quote: &Quote) -> VenueResult<ExecutionResult> {
@@ -738,14 +760,28 @@ impl VenueAdapter for ParaswapAdapter {
     }
 
     async fn health_check(&self) -> VenueResult<VenueHealth> {
-        // TODO: Make health check request to Paraswap API
-        // For now, return healthy if enabled
-        if self.config.is_enabled() {
-            Ok(VenueHealth::healthy(self.config.venue_id().clone()))
+        if !self.config.is_enabled() {
+            return Ok(VenueHealth::unhealthy(
+                self.config.venue_id().clone(),
+                "Adapter is disabled",
+            ));
+        }
+
+        // Check API availability
+        let url = format!("{}/health", BASE_URL);
+        let start = std::time::Instant::now();
+        let is_healthy = self.http_client.health_check(&url).await;
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        if is_healthy {
+            Ok(VenueHealth::healthy_with_latency(
+                self.config.venue_id().clone(),
+                latency_ms,
+            ))
         } else {
             Ok(VenueHealth::unhealthy(
                 self.config.venue_id().clone(),
-                "Adapter is disabled",
+                "API health check failed",
             ))
         }
     }
@@ -884,13 +920,13 @@ mod tests {
 
         #[test]
         fn new() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             assert_eq!(adapter.venue_id(), &VenueId::new("paraswap"));
         }
 
         #[test]
         fn debug_format() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let debug = format!("{:?}", adapter);
             assert!(debug.contains("ParaswapAdapter"));
             assert!(debug.contains("paraswap"));
@@ -898,13 +934,13 @@ mod tests {
 
         #[test]
         fn build_prices_url() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             assert_eq!(adapter.build_prices_url(), "https://api.paraswap.io/prices");
         }
 
         #[test]
         fn build_transactions_url() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             assert_eq!(
                 adapter.build_transactions_url(),
                 "https://api.paraswap.io/transactions/1"
@@ -914,7 +950,7 @@ mod tests {
         #[test]
         fn build_transactions_url_polygon() {
             let config = ParaswapConfig::new().with_chain(ParaswapChain::Polygon);
-            let adapter = ParaswapAdapter::new(config);
+            let adapter = ParaswapAdapter::new(config).unwrap();
             assert_eq!(
                 adapter.build_transactions_url(),
                 "https://api.paraswap.io/transactions/137"
@@ -923,42 +959,35 @@ mod tests {
 
         #[test]
         fn to_smallest_unit() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let amount = adapter.to_smallest_unit(Decimal::from(1), 18);
             assert_eq!(amount, "1000000000000000000");
         }
 
         #[test]
         fn to_smallest_unit_6_decimals() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let amount = adapter.to_smallest_unit(Decimal::from(100), 6);
             assert_eq!(amount, "100000000");
         }
 
         #[tokio::test]
         async fn is_available_when_enabled() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             assert!(adapter.is_available().await);
         }
 
         #[tokio::test]
         async fn is_not_available_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = ParaswapAdapter::new(config);
+            let adapter = ParaswapAdapter::new(config).unwrap();
             assert!(!adapter.is_available().await);
-        }
-
-        #[tokio::test]
-        async fn health_check_healthy_when_enabled() {
-            let adapter = ParaswapAdapter::new(test_config());
-            let health = adapter.health_check().await.unwrap();
-            assert!(health.is_healthy());
         }
 
         #[tokio::test]
         async fn health_check_unhealthy_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = ParaswapAdapter::new(config);
+            let adapter = ParaswapAdapter::new(config).unwrap();
             let health = adapter.health_check().await.unwrap();
             assert!(!health.is_healthy());
         }
@@ -1019,7 +1048,7 @@ mod tests {
 
         #[test]
         fn calculate_price() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let response = test_quote_response();
             let price = adapter.calculate_price(&response).unwrap();
             // 1850.5 USDC / 1 ETH = 1850.5
@@ -1028,7 +1057,7 @@ mod tests {
 
         #[test]
         fn estimate_gas_cost() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let response = test_quote_response();
             let gas_cost = adapter.estimate_gas_cost(&response).unwrap();
             assert!((gas_cost.get().to_f64().unwrap() - 5.25).abs() < 0.01);
@@ -1036,7 +1065,7 @@ mod tests {
 
         #[test]
         fn format_route() {
-            let adapter = ParaswapAdapter::new(test_config());
+            let adapter = ParaswapAdapter::new(test_config()).unwrap();
             let routes = vec![ParaswapRoute {
                 percent: 100.0,
                 swaps: vec![ParaswapSwap {
