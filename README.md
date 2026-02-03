@@ -79,39 +79,13 @@ The OTC RFQ System addresses these challenges by:
 
 ### Supported Venue Types
 
-```mermaid
-graph TB
-    subgraph VENUE_ECOSYSTEM["🏛️ Venue Ecosystem"]
-        subgraph TRADFI["TradFi MMs"]
-            T1["FIX 4.4"]
-            T2["Internal Market Makers"]
-        end
-        
-        subgraph DEX["DEX Aggregators"]
-            D1["0x"]
-            D2["1inch"]
-            D3["Paraswap"]
-        end
-        
-        subgraph RFQ["RFQ Protocols"]
-            R1["Hashflow"]
-            R2["Bebop"]
-            R3["Airswap"]
-        end
-        
-        subgraph ONCHAIN["On-Chain Protocols"]
-            O1["Uniswap V3"]
-            O2["Curve"]
-            O3["Balancer"]
-        end
-        
-        subgraph SETTLEMENT["Settlement Options"]
-            S1["On-chain"]
-            S2["Off-chain"]
-            S3["Hybrid"]
-        end
-    end
-```
+| Category | Venues |
+|----------|--------|
+| **TradFi Market Makers** | FIX 4.4, Internal Market Makers |
+| **DEX Aggregators** | 0x, 1inch, Paraswap |
+| **RFQ Protocols** | Hashflow, Bebop, Airswap |
+| **On-Chain Protocols** | Uniswap V3, Curve, Balancer |
+| **Settlement Options** | On-chain, Off-chain, Hybrid |
 
 ### Supported Asset Classes
 
