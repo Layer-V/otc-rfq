@@ -73,17 +73,21 @@ rand = { workspace = true }
 tonic-prost = { workspace = true }
 tokio-stream = { workspace = true }
 
-# IronFix for FIX protocol (optional - enable when available)
-# ironfix = { workspace = true }
+# IronFix for FIX protocol
+ironfix-core = { workspace = true }
+ironfix-tagvalue = { workspace = true }
+ironfix-session = { workspace = true }
+ironfix-engine = { workspace = true }
 
-# IronSBE for binary encoding (optional - enable when available)
-# ironsbe = { workspace = true }
+# IronSBE for binary encoding
+ironsbe-core = { workspace = true }
+ironsbe-schema = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
 tonic-prost-build = { workspace = true }
 prost-build = { workspace = true }
-# ironsbe-codegen = { workspace = true }
+ironsbe-codegen = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
@@ -164,12 +168,16 @@ proptest = "1.9"
 testcontainers = "0.26"
 criterion = { version = "0.8", features = ["async_tokio"] }
 
-# IronFix for FIX protocol (optional - enable when available)
-# ironfix = { git = "https://github.com/joaquinbejar/IronFix", branch = "main" }
+# IronFix for FIX protocol
+ironfix-core = "0.1"
+ironfix-tagvalue = "0.1"
+ironfix-session = "0.1"
+ironfix-engine = "0.1"
 
-# IronSBE for binary encoding (optional - enable when available)
-# ironsbe = { git = "https://github.com/joaquinbejar/IronSBE", branch = "main" }
-# ironsbe-codegen = { git = "https://github.com/joaquinbejar/IronSBE", branch = "main" }
+# IronSBE for binary encoding
+ironsbe-core = "0.1"
+ironsbe-schema = "0.1"
+ironsbe-codegen = "0.1"
 
 [lints.rust]
 unsafe_code = "deny"
