@@ -1,12 +1,13 @@
-//! # DEX Aggregator Adapters
+//! # DEX Adapters
 //!
-//! Adapters for DEX aggregators like 0x, 1inch, and Paraswap.
+//! Adapters for DEX aggregators and protocols like 0x, 1inch, Paraswap, and Uniswap V3.
 //!
 //! ## Available Adapters
 //!
 //! - [`ZeroXAdapter`]: 0x Protocol DEX aggregator
 //! - [`OneInchAdapter`]: 1inch DEX aggregator
 //! - [`ParaswapAdapter`]: Paraswap DEX aggregator
+//! - [`UniswapV3Adapter`]: Uniswap V3 concentrated liquidity DEX
 //!
 //! ## Multi-Chain Support
 //!
@@ -23,6 +24,7 @@
 
 pub mod one_inch;
 pub mod paraswap;
+pub mod uniswap_v3;
 pub mod zero_x;
 
 pub use one_inch::{
@@ -31,5 +33,8 @@ pub use one_inch::{
 pub use paraswap::{
     ParaswapAdapter, ParaswapChain, ParaswapConfig, ParaswapQuoteResponse,
     ParaswapTransactionResponse,
+};
+pub use uniswap_v3::{
+    FeeTier, PoolInfo, QuoteResult, SwapPath, UniswapV3Adapter, UniswapV3Chain, UniswapV3Config,
 };
 pub use zero_x::{ZeroXAdapter, ZeroXChain, ZeroXConfig, ZeroXQuoteResponse, ZeroXSource};
