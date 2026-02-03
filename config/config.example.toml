@@ -1,0 +1,44 @@
+# =============================================================================
+# OTC-RFQ Service Configuration Example
+# =============================================================================
+# Copy this file to config.toml and modify as needed
+# =============================================================================
+
+[server]
+# HTTP API server configuration
+http_host = "0.0.0.0"
+http_port = 8080
+
+# gRPC server configuration
+grpc_host = "0.0.0.0"
+grpc_port = 50051
+
+# Metrics server configuration
+metrics_host = "0.0.0.0"
+metrics_port = 9090
+
+[logging]
+# Log level: trace, debug, info, warn, error
+level = "info"
+# Log format: json, pretty
+format = "json"
+
+[venues]
+# Enable/disable specific venues
+enable_0x = true
+enable_1inch = true
+enable_paraswap = true
+enable_airswap = true
+
+# Venue-specific configuration
+[venues.zero_x]
+api_url = "https://api.0x.org"
+timeout_ms = 5000
+
+[venues.one_inch]
+api_url = "https://api.1inch.io"
+timeout_ms = 5000
+
+[venues.paraswap]
+api_url = "https://apiv5.paraswap.io"
+timeout_ms = 5000
