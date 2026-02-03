@@ -29,8 +29,10 @@ use crate::domain::entities::rfq::Rfq;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{Blockchain, OrderSide, Price, VenueId};
 use crate::infrastructure::venues::error::{VenueError, VenueResult};
+use crate::infrastructure::venues::http_client::HttpClient;
 use crate::infrastructure::venues::traits::{ExecutionResult, VenueAdapter, VenueHealth};
 use async_trait::async_trait;
+use reqwest::header::{HeaderMap, HeaderValue};
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -427,20 +429,40 @@ impl OneInchConfig {
 ///
 /// Implements the [`VenueAdapter`] trait for the 1inch Protocol.
 ///
-/// # Note
+/// # Features
 ///
-/// This is a stub implementation. Full HTTP client integration
-/// will be completed with reqwest.
+/// - HTTP client for 1inch API
+/// - Quote endpoint integration
+/// - Multi-chain support
 pub struct OneInchAdapter {
     /// Configuration.
     config: OneInchConfig,
+    /// HTTP client for API requests.
+    http_client: HttpClient,
 }
 
 impl OneInchAdapter {
     /// Creates a new 1inch adapter.
-    #[must_use]
-    pub fn new(config: OneInchConfig) -> Self {
-        Self { config }
+    ///
+    /// # Errors
+    ///
+    /// Returns `VenueError::InternalError` if the HTTP client cannot be created.
+    pub fn new(config: OneInchConfig) -> VenueResult<Self> {
+        let headers = Self::build_headers(&config)?;
+        let http_client = HttpClient::with_headers(config.timeout_ms(), headers)?;
+        Ok(Self {
+            config,
+            http_client,
+        })
+    }
+
+    /// Builds the default headers for API requests.
+    fn build_headers(config: &OneInchConfig) -> VenueResult<HeaderMap> {
+        let mut headers = HeaderMap::new();
+        let auth_value = HeaderValue::from_str(&format!("Bearer {}", config.api_key()))
+            .map_err(|_| VenueError::internal_error("Invalid API key format"))?;
+        headers.insert("Authorization", auth_value);
+        Ok(headers)
     }
 
     /// Returns the configuration.
@@ -673,19 +695,27 @@ impl VenueAdapter for OneInchAdapter {
         }
 
         // Resolve token addresses
-        let (_src_token, _dst_token) = self.resolve_tokens(rfq)?;
+        let (src_token, dst_token) = self.resolve_tokens(rfq)?;
 
         // Convert quantity (assuming 18 decimals for now)
-        let _amount = self.to_smallest_unit(rfq.quantity().get(), 18);
+        let amount = self.to_smallest_unit(rfq.quantity().get(), 18);
+
+        // Build query parameters
+        let params = [
+            ("src", src_token.as_str()),
+            ("dst", dst_token.as_str()),
+            ("amount", amount.as_str()),
+        ];
 
         // Build quote URL
-        let _url = self.config.quote_url();
+        let url = self.config.quote_url();
 
-        // TODO: Make HTTP request to 1inch API
-        // For now, return a stub error indicating not implemented
-        Err(VenueError::internal_error(
-            "1inch API integration not yet implemented - requires HTTP client",
-        ))
+        // Make HTTP request to 1inch API
+        let response: OneInchQuoteResponse =
+            self.http_client.get_with_params(&url, &params).await?;
+
+        // Parse response into Quote
+        self.parse_quote_response(response, rfq)
     }
 
     async fn execute_trade(&self, quote: &Quote) -> VenueResult<ExecutionResult> {
@@ -721,14 +751,28 @@ impl VenueAdapter for OneInchAdapter {
     }
 
     async fn health_check(&self) -> VenueResult<VenueHealth> {
-        // TODO: Make health check request to 1inch API
-        // For now, return healthy if enabled
-        if self.config.is_enabled() {
-            Ok(VenueHealth::healthy(self.config.venue_id().clone()))
+        if !self.config.is_enabled() {
+            return Ok(VenueHealth::unhealthy(
+                self.config.venue_id().clone(),
+                "Adapter is disabled",
+            ));
+        }
+
+        // Check API availability
+        let url = format!("{}/healthcheck", BASE_URL);
+        let start = std::time::Instant::now();
+        let is_healthy = self.http_client.health_check(&url).await;
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        if is_healthy {
+            Ok(VenueHealth::healthy_with_latency(
+                self.config.venue_id().clone(),
+                latency_ms,
+            ))
         } else {
             Ok(VenueHealth::unhealthy(
                 self.config.venue_id().clone(),
-                "Adapter is disabled",
+                "API health check failed",
             ))
         }
     }
@@ -857,13 +901,13 @@ mod tests {
 
         #[test]
         fn new() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             assert_eq!(adapter.venue_id(), &VenueId::new("1inch-aggregator"));
         }
 
         #[test]
         fn debug_format() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             let debug = format!("{:?}", adapter);
             assert!(debug.contains("OneInchAdapter"));
             assert!(debug.contains("1inch-aggregator"));
@@ -871,7 +915,7 @@ mod tests {
 
         #[test]
         fn to_smallest_unit() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             let amount = adapter.to_smallest_unit(Decimal::from(1), 18);
             assert_eq!(amount, "1000000000000000000");
 
@@ -881,28 +925,21 @@ mod tests {
 
         #[tokio::test]
         async fn is_available_when_enabled() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             assert!(adapter.is_available().await);
         }
 
         #[tokio::test]
         async fn is_not_available_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = OneInchAdapter::new(config);
+            let adapter = OneInchAdapter::new(config).unwrap();
             assert!(!adapter.is_available().await);
-        }
-
-        #[tokio::test]
-        async fn health_check_healthy_when_enabled() {
-            let adapter = OneInchAdapter::new(test_config());
-            let health = adapter.health_check().await.unwrap();
-            assert!(health.is_healthy());
         }
 
         #[tokio::test]
         async fn health_check_unhealthy_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = OneInchAdapter::new(config);
+            let adapter = OneInchAdapter::new(config).unwrap();
             let health = adapter.health_check().await.unwrap();
             assert!(!health.is_healthy());
         }
@@ -949,7 +986,7 @@ mod tests {
 
         #[test]
         fn calculate_price() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             let response = test_quote_response();
             let price = adapter.calculate_price(&response).unwrap();
             // 1850 USDC / 1 WETH = 1850
@@ -958,7 +995,7 @@ mod tests {
 
         #[test]
         fn format_protocols() {
-            let adapter = OneInchAdapter::new(test_config());
+            let adapter = OneInchAdapter::new(test_config()).unwrap();
             let protocols = vec![vec![vec![
                 OneInchProtocol {
                     name: "UNISWAP_V3".to_string(),

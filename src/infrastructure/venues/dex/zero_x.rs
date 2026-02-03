@@ -29,8 +29,10 @@ use crate::domain::entities::rfq::Rfq;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{Blockchain, OrderSide, Price, VenueId};
 use crate::infrastructure::venues::error::{VenueError, VenueResult};
+use crate::infrastructure::venues::http_client::HttpClient;
 use crate::infrastructure::venues::traits::{ExecutionResult, VenueAdapter, VenueHealth};
 use async_trait::async_trait;
+use reqwest::header::{HeaderMap, HeaderValue};
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -410,20 +412,41 @@ impl ZeroXConfig {
 ///
 /// Implements the [`VenueAdapter`] trait for the 0x Protocol.
 ///
-/// # Note
+/// # Features
 ///
-/// This is a stub implementation. Full HTTP client integration
-/// will be completed with reqwest.
+/// - HTTP client for 0x API
+/// - Quote endpoint integration
+/// - Multi-chain support
+/// - Gas cost estimation
 pub struct ZeroXAdapter {
     /// Configuration.
     config: ZeroXConfig,
+    /// HTTP client for API requests.
+    http_client: HttpClient,
 }
 
 impl ZeroXAdapter {
     /// Creates a new 0x adapter.
-    #[must_use]
-    pub fn new(config: ZeroXConfig) -> Self {
-        Self { config }
+    ///
+    /// # Errors
+    ///
+    /// Returns `VenueError::InternalError` if the HTTP client cannot be created.
+    pub fn new(config: ZeroXConfig) -> VenueResult<Self> {
+        let headers = Self::build_headers(&config)?;
+        let http_client = HttpClient::with_headers(config.timeout_ms(), headers)?;
+        Ok(Self {
+            config,
+            http_client,
+        })
+    }
+
+    /// Builds the default headers for API requests.
+    fn build_headers(config: &ZeroXConfig) -> VenueResult<HeaderMap> {
+        let mut headers = HeaderMap::new();
+        let api_key = HeaderValue::from_str(config.api_key())
+            .map_err(|_| VenueError::internal_error("Invalid API key format"))?;
+        headers.insert("0x-api-key", api_key);
+        Ok(headers)
     }
 
     /// Returns the configuration.
@@ -607,19 +630,30 @@ impl VenueAdapter for ZeroXAdapter {
         }
 
         // Resolve token addresses
-        let (_sell_token, _buy_token) = self.resolve_tokens(rfq)?;
+        let (sell_token, buy_token) = self.resolve_tokens(rfq)?;
 
         // Convert quantity to wei
-        let _amount = self.to_wei(rfq.quantity().get());
+        let sell_amount = self.to_wei(rfq.quantity().get());
+
+        // Build query parameters
+        let params = [
+            ("sellToken", sell_token.as_str()),
+            ("buyToken", buy_token.as_str()),
+            ("sellAmount", sell_amount.as_str()),
+            (
+                "slippagePercentage",
+                &format!("{:.4}", self.config.slippage_bps() as f64 / 10000.0),
+            ),
+        ];
 
         // Build quote URL
-        let _url = self.build_quote_url();
+        let url = self.build_quote_url();
 
-        // TODO: Make HTTP request to 0x API
-        // For now, return a stub error indicating not implemented
-        Err(VenueError::internal_error(
-            "0x API integration not yet implemented - requires HTTP client",
-        ))
+        // Make HTTP request to 0x API
+        let response: ZeroXQuoteResponse = self.http_client.get_with_params(&url, &params).await?;
+
+        // Parse response into Quote
+        self.parse_quote_response(response, rfq)
     }
 
     async fn execute_trade(&self, quote: &Quote) -> VenueResult<ExecutionResult> {
@@ -655,14 +689,28 @@ impl VenueAdapter for ZeroXAdapter {
     }
 
     async fn health_check(&self) -> VenueResult<VenueHealth> {
-        // TODO: Make health check request to 0x API
-        // For now, return healthy if enabled
-        if self.config.is_enabled() {
-            Ok(VenueHealth::healthy(self.config.venue_id().clone()))
+        if !self.config.is_enabled() {
+            return Ok(VenueHealth::unhealthy(
+                self.config.venue_id().clone(),
+                "Adapter is disabled",
+            ));
+        }
+
+        // Check API availability by making a simple request
+        let url = format!("{}/swap/v1/sources", self.config.base_url());
+        let start = std::time::Instant::now();
+        let is_healthy = self.http_client.health_check(&url).await;
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        if is_healthy {
+            Ok(VenueHealth::healthy_with_latency(
+                self.config.venue_id().clone(),
+                latency_ms,
+            ))
         } else {
             Ok(VenueHealth::unhealthy(
                 self.config.venue_id().clone(),
-                "Adapter is disabled",
+                "API health check failed",
             ))
         }
     }
@@ -778,13 +826,13 @@ mod tests {
 
         #[test]
         fn new() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             assert_eq!(adapter.venue_id(), &VenueId::new("0x-aggregator"));
         }
 
         #[test]
         fn debug_format() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             let debug = format!("{:?}", adapter);
             assert!(debug.contains("ZeroXAdapter"));
             assert!(debug.contains("0x-aggregator"));
@@ -792,7 +840,7 @@ mod tests {
 
         #[test]
         fn build_quote_url() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             assert_eq!(
                 adapter.build_quote_url(),
                 "https://api.0x.org/swap/v1/quote"
@@ -801,35 +849,28 @@ mod tests {
 
         #[test]
         fn to_wei() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             let wei = adapter.to_wei(Decimal::from(1));
             assert_eq!(wei, "1000000000000000000");
         }
 
         #[tokio::test]
         async fn is_available_when_enabled() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             assert!(adapter.is_available().await);
         }
 
         #[tokio::test]
         async fn is_not_available_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = ZeroXAdapter::new(config);
+            let adapter = ZeroXAdapter::new(config).unwrap();
             assert!(!adapter.is_available().await);
-        }
-
-        #[tokio::test]
-        async fn health_check_healthy_when_enabled() {
-            let adapter = ZeroXAdapter::new(test_config());
-            let health = adapter.health_check().await.unwrap();
-            assert!(health.is_healthy());
         }
 
         #[tokio::test]
         async fn health_check_unhealthy_when_disabled() {
             let config = test_config().with_enabled(false);
-            let adapter = ZeroXAdapter::new(config);
+            let adapter = ZeroXAdapter::new(config).unwrap();
             let health = adapter.health_check().await.unwrap();
             assert!(!health.is_healthy());
         }
@@ -870,7 +911,7 @@ mod tests {
 
         #[test]
         fn calculate_price() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             let response = test_quote_response();
             let price = adapter.calculate_price(&response).unwrap();
             assert!((price.get().to_f64().unwrap() - 1850.5).abs() < 0.01);
@@ -878,7 +919,7 @@ mod tests {
 
         #[test]
         fn format_sources() {
-            let adapter = ZeroXAdapter::new(test_config());
+            let adapter = ZeroXAdapter::new(test_config()).unwrap();
             let sources = vec![
                 ZeroXSource {
                     name: "Uniswap_V3".to_string(),
