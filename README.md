@@ -1,6 +1,6 @@
 # OTC RFQ Engine
 
-[![Dual License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Crates.io](https://img.shields.io/crates/v/otc-rfq.svg)](https://crates.io/crates/otc-rfq)
 [![Downloads](https://img.shields.io/crates/d/otc-rfq.svg)](https://crates.io/crates/otc-rfq)
 [![Stars](https://img.shields.io/github/stars/joaquinbejar/otc-rfq.svg)](https://github.com/joaquinbejar/otc-rfq/stargazers)
