@@ -7,18 +7,22 @@
 //!
 //! # Features
 //!
-//! - FIX 4.4 protocol support
-//! - QuoteRequest (R) message building
+//! - FIX 4.4 protocol support via IronFix
+//! - QuoteRequest (R) message building with [`ironfix_tagvalue::Encoder`]
 //! - Quote (S) message parsing
 //! - NewOrderSingle (D) message for execution
 //! - ExecutionReport (8) handling
 //! - Pending quote tracking with response channels
 //! - Configurable timeouts
 //!
-//! # Note
+//! # IronFix Integration
 //!
-//! This is a stub implementation. Full IronFix integration will be
-//! completed when the IronFix library is ready.
+//! This adapter uses the IronFix library for FIX protocol encoding:
+//! - [`ironfix_tagvalue::Encoder`] for building FIX messages
+//! - [`ironfix_core`] types for FIX protocol primitives
+//!
+//! The [`encode_quote_request`] and [`encode_new_order_single`] methods
+//! return properly formatted FIX messages with checksums.
 //!
 //! # Examples
 //!
@@ -47,6 +51,23 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{RwLock, oneshot};
+
+// Re-export IronFix types for external use
+pub use ironfix_tagvalue::Encoder as FixEncoder;
+
+/// Converts a FIX version string to a static string reference.
+///
+/// This is needed because [`ironfix_tagvalue::Encoder`] requires a `&'static str`.
+#[must_use]
+fn fix_version_to_static(version: &str) -> &'static str {
+    match version {
+        "FIX.4.0" => "FIX.4.0",
+        "FIX.4.2" => "FIX.4.2",
+        "FIX.4.4" => "FIX.4.4",
+        "FIXT.1.1" => "FIXT.1.1",
+        _ => "FIX.4.4", // Default to FIX 4.4
+    }
+}
 
 /// FIX message type constants.
 pub mod msg_type {
@@ -319,6 +340,78 @@ impl FixMMAdapter {
             (tags::TIME_IN_FORCE, time_in_force::FOK.to_string()),
             (tags::TRANSACT_TIME, Timestamp::now().to_fix_format()),
         ]
+    }
+
+    /// Encodes a QuoteRequest FIX message using IronFix.
+    ///
+    /// Returns a complete FIX message with header and checksum.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let message = adapter.encode_quote_request(&rfq, "QR-001");
+    /// // message is ready to send over the wire
+    /// ```
+    #[must_use]
+    pub fn encode_quote_request(&self, rfq: &Rfq, quote_req_id: &str) -> bytes::BytesMut {
+        let fix_version = self.config.session().fix_version().as_str();
+        let mut encoder = ironfix_tagvalue::Encoder::new(fix_version_to_static(fix_version));
+
+        // MsgType = R (QuoteRequest)
+        encoder.put_str(35, msg_type::QUOTE_REQUEST);
+
+        // Session fields
+        encoder.put_str(49, self.config.session().sender_comp_id());
+        encoder.put_str(56, self.config.session().target_comp_id());
+        encoder.put_uint(34, self.next_seq_num());
+        encoder.put_str(52, &Timestamp::now().to_fix_format());
+
+        // QuoteRequest fields
+        encoder.put_str(tags::QUOTE_REQ_ID, quote_req_id);
+        encoder.put_str(tags::SYMBOL, rfq.instrument().symbol().as_str());
+        encoder.put_str(tags::SIDE, Self::side_to_fix(rfq.side()));
+        encoder.put_str(tags::ORDER_QTY, &rfq.quantity().get().to_string());
+        encoder.put_str(tags::TRANSACT_TIME, &Timestamp::now().to_fix_format());
+
+        encoder.finish()
+    }
+
+    /// Encodes a NewOrderSingle FIX message using IronFix.
+    ///
+    /// Returns a complete FIX message with header and checksum.
+    #[must_use]
+    pub fn encode_new_order_single(
+        &self,
+        quote: &Quote,
+        cl_ord_id: &str,
+        venue_quote_id: &str,
+        symbol: &str,
+        side: OrderSide,
+    ) -> bytes::BytesMut {
+        let fix_version = self.config.session().fix_version().as_str();
+        let mut encoder = ironfix_tagvalue::Encoder::new(fix_version_to_static(fix_version));
+
+        // MsgType = D (NewOrderSingle)
+        encoder.put_str(35, msg_type::NEW_ORDER_SINGLE);
+
+        // Session fields
+        encoder.put_str(49, self.config.session().sender_comp_id());
+        encoder.put_str(56, self.config.session().target_comp_id());
+        encoder.put_uint(34, self.next_seq_num());
+        encoder.put_str(52, &Timestamp::now().to_fix_format());
+
+        // Order fields
+        encoder.put_str(tags::CL_ORD_ID, cl_ord_id);
+        encoder.put_str(tags::QUOTE_ID, venue_quote_id);
+        encoder.put_str(tags::SYMBOL, symbol);
+        encoder.put_str(tags::SIDE, Self::side_to_fix(side));
+        encoder.put_str(tags::ORDER_QTY, &quote.quantity().get().to_string());
+        encoder.put_str(tags::ORD_TYPE, ord_type::PREVIOUSLY_QUOTED);
+        encoder.put_str(tags::PRICE, &quote.price().get().to_string());
+        encoder.put_str(tags::TIME_IN_FORCE, time_in_force::FOK);
+        encoder.put_str(tags::TRANSACT_TIME, &Timestamp::now().to_fix_format());
+
+        encoder.finish()
     }
 
     /// Parses a Quote FIX message response.

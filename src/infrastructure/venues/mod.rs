@@ -18,12 +18,18 @@
 //! - [`FixMMConfig`]: Configuration for FIX market maker
 //! - [`FixSessionConfig`]: FIX session configuration
 //!
+//! ## IronFix Integration
+//!
+//! The FIX adapter uses IronFix for protocol encoding:
+//! - [`fix_adapter::FixEncoder`]: Re-exported `ironfix_tagvalue::Encoder`
+//! - [`fix_messages`]: Type-safe FIX message builders
+//!
 //! ## Implementations
 //!
 //! - `dex`: DEX aggregator adapters
 //! - `rfq_protocols`: RFQ protocol adapters (Hashflow, Bebop)
 //! - `internal_mm`: Internal market maker adapter
-//! - `fix_adapter`: FIX protocol adapter
+//! - `fix_adapter`: FIX protocol adapter with IronFix encoding
 
 pub mod dex;
 pub mod error;
