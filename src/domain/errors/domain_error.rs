@@ -22,6 +22,8 @@
 //! ```
 
 use crate::domain::value_objects::arithmetic::ArithmeticError;
+use crate::domain::value_objects::negotiation_state::NegotiationState;
+use crate::domain::value_objects::price::Price;
 use crate::domain::value_objects::rfq_state::RfqState;
 use thiserror::Error;
 
@@ -116,6 +118,39 @@ pub enum DomainError {
     #[error("operation not allowed: {0}")]
     OperationNotAllowed(String),
 
+    /// Negotiation not found.
+    #[error("negotiation not found: {0}")]
+    NegotiationNotFound(String),
+
+    /// Maximum negotiation rounds reached.
+    #[error("maximum negotiation rounds reached: {max_rounds}")]
+    MaxNegotiationRoundsReached {
+        /// The configured maximum number of rounds.
+        max_rounds: u8,
+    },
+
+    /// Counter-quote does not improve on the previous price.
+    #[error("no price improvement: previous {previous}, proposed {proposed}")]
+    NoPriceImprovement {
+        /// The previous best price.
+        previous: Price,
+        /// The proposed counter price.
+        proposed: Price,
+    },
+
+    /// Negotiation has expired.
+    #[error("negotiation expired: {0}")]
+    NegotiationExpired(String),
+
+    /// Invalid negotiation state transition.
+    #[error("invalid negotiation state transition from {from} to {to}")]
+    InvalidNegotiationStateTransition {
+        /// The current negotiation state.
+        from: NegotiationState,
+        /// The attempted target negotiation state.
+        to: NegotiationState,
+    },
+
     // ========================================================================
     // Compliance Errors (3000-3999)
     // ========================================================================
@@ -196,6 +231,11 @@ impl DomainError {
             Self::RfqNotFound(_) => 2004,
             Self::TradeNotFound(_) => 2005,
             Self::AlreadyExists(_) => 2006,
+            Self::NegotiationNotFound(_) => 2007,
+            Self::MaxNegotiationRoundsReached { .. } => 2008,
+            Self::NoPriceImprovement { .. } => 2009,
+            Self::NegotiationExpired(_) => 2010,
+            Self::InvalidNegotiationStateTransition { .. } => 2011,
             Self::OperationNotAllowed(_) => 2099,
 
             // Compliance errors (3000-3999)
@@ -321,6 +361,17 @@ mod tests {
                 DomainError::RfqNotFound("test".to_string()),
                 DomainError::TradeNotFound("test".to_string()),
                 DomainError::AlreadyExists("test".to_string()),
+                DomainError::NegotiationNotFound("test".to_string()),
+                DomainError::MaxNegotiationRoundsReached { max_rounds: 3 },
+                DomainError::NoPriceImprovement {
+                    previous: Price::new(100.0).unwrap(),
+                    proposed: Price::new(101.0).unwrap(),
+                },
+                DomainError::NegotiationExpired("test".to_string()),
+                DomainError::InvalidNegotiationStateTransition {
+                    from: NegotiationState::Open,
+                    to: NegotiationState::Open,
+                },
                 DomainError::OperationNotAllowed("test".to_string()),
             ];
 
@@ -463,6 +514,31 @@ mod tests {
                 2001
             );
             assert_eq!(DomainError::QuoteExpired("".to_string()).code(), 2002);
+            assert_eq!(
+                DomainError::NegotiationNotFound("".to_string()).code(),
+                2007
+            );
+            assert_eq!(
+                DomainError::MaxNegotiationRoundsReached { max_rounds: 3 }.code(),
+                2008
+            );
+            assert_eq!(
+                DomainError::NoPriceImprovement {
+                    previous: Price::new(100.0).unwrap(),
+                    proposed: Price::new(101.0).unwrap(),
+                }
+                .code(),
+                2009
+            );
+            assert_eq!(DomainError::NegotiationExpired("".to_string()).code(), 2010);
+            assert_eq!(
+                DomainError::InvalidNegotiationStateTransition {
+                    from: NegotiationState::Open,
+                    to: NegotiationState::Accepted,
+                }
+                .code(),
+                2011
+            );
             assert_eq!(DomainError::ComplianceBlocked("".to_string()).code(), 3001);
             assert_eq!(DomainError::KycFailed("".to_string()).code(), 3002);
             assert_eq!(DomainError::Overflow.code(), 4001);

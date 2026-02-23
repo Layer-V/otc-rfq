@@ -256,6 +256,65 @@ impl From<Uuid> for EventId {
     }
 }
 
+/// Negotiation identifier.
+///
+/// A UUID-based identifier uniquely identifying a negotiation session
+/// between a requester and a market maker.
+///
+/// # Examples
+///
+/// ```
+/// use otc_rfq::domain::value_objects::ids::NegotiationId;
+///
+/// let neg_id = NegotiationId::new_v4();
+/// println!("Negotiation: {}", neg_id);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NegotiationId(Uuid);
+
+impl NegotiationId {
+    /// Creates a new Negotiation ID from an existing UUID.
+    #[inline]
+    #[must_use]
+    pub const fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Generates a new random Negotiation ID using UUID v4.
+    #[must_use]
+    pub fn new_v4() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Returns the inner UUID value.
+    #[inline]
+    #[must_use]
+    pub const fn get(self) -> Uuid {
+        self.0
+    }
+
+    /// Creates a Negotiation ID from a UUID reference.
+    #[inline]
+    #[must_use]
+    pub const fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl fmt::Display for NegotiationId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.hyphenated())
+    }
+}
+
+impl From<Uuid> for NegotiationId {
+    #[inline]
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
 /// Venue identifier.
 ///
 /// A string-based identifier for liquidity venues (market makers, DEX aggregators, etc.).
@@ -567,6 +626,51 @@ mod tests {
             let venue_id = VenueId::new("paraswap");
             let inner = venue_id.into_inner();
             assert_eq!(inner, "paraswap");
+        }
+    }
+
+    mod negotiation_id {
+        use super::*;
+
+        #[test]
+        fn new_v4_generates_unique_ids() {
+            let id1 = NegotiationId::new_v4();
+            let id2 = NegotiationId::new_v4();
+            assert_ne!(id1, id2);
+        }
+
+        #[test]
+        fn from_uuid_roundtrip() {
+            let uuid = Uuid::new_v4();
+            let neg_id = NegotiationId::new(uuid);
+            assert_eq!(neg_id.get(), uuid);
+        }
+
+        #[test]
+        fn display_formats_as_hyphenated() {
+            let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+            let neg_id = NegotiationId::new(uuid);
+            assert_eq!(neg_id.to_string(), "550e8400-e29b-41d4-a716-446655440000");
+        }
+
+        #[test]
+        fn serde_roundtrip() {
+            let neg_id = NegotiationId::new_v4();
+            let json = serde_json::to_string(&neg_id).unwrap();
+            let deserialized: NegotiationId = serde_json::from_str(&json).unwrap();
+            assert_eq!(neg_id, deserialized);
+        }
+
+        #[test]
+        fn hash_equality() {
+            use std::collections::HashSet;
+            let uuid = Uuid::new_v4();
+            let id1 = NegotiationId::new(uuid);
+            let id2 = NegotiationId::new(uuid);
+
+            let mut set = HashSet::new();
+            set.insert(id1);
+            assert!(set.contains(&id2));
         }
     }
 

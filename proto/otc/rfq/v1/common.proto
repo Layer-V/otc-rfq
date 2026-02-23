@@ -40,6 +40,7 @@ enum RfqState {
   RFQ_STATE_FAILED = 7;
   RFQ_STATE_CANCELLED = 8;
   RFQ_STATE_EXPIRED = 9;
+  RFQ_STATE_NEGOTIATING = 10;
 }
 
 // Venue type
