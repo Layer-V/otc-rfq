@@ -246,7 +246,7 @@ pub type FixField = (u32, String);
 ///
 /// let fields = QuoteRequestBuilder::new("QR-001", "BTC/USD")
 ///     .side(OrderSide::Buy)
-///     .quantity(100.0)
+///     .quantity(100i64)
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
@@ -482,9 +482,9 @@ impl QuoteMessage {
 ///
 /// let fields = NewOrderSingleBuilder::new("ORD-001", "BTC/USD")
 ///     .side(OrderSide::Buy)
-///     .quantity(100.0)
+///     .quantity(100i64)
 ///     .previously_quoted("Q-123")
-///     .price(50000.0)
+///     .price(50000i64)
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
