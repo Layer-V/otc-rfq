@@ -23,9 +23,11 @@
 
 use crate::application::error::ApplicationError;
 use crate::application::use_cases::create_rfq::RfqRepository;
+use crate::domain::entities::mm_performance::MmPerformanceMetrics;
 use crate::domain::entities::rfq::Rfq;
 use crate::domain::entities::trade::Trade;
 use crate::domain::entities::venue::{Venue, VenueHealth};
+use crate::domain::services::mm_performance::MmPerformanceTracker;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{
     CounterpartyId, Instrument, OrderSide, Quantity, RfqId, RfqState, TradeId, VenueId, VenueType,
@@ -52,6 +54,8 @@ pub struct AppState {
     pub venue_repository: Arc<dyn VenueRepository>,
     /// Trade repository.
     pub trade_repository: Arc<dyn TradeRepository>,
+    /// MM performance tracker (optional — `None` disables MM performance endpoints).
+    pub mm_performance_tracker: Option<Arc<MmPerformanceTracker>>,
 }
 
 /// Repository for venue persistence.
@@ -709,6 +713,134 @@ pub async fn get_trade(
         .ok_or_else(|| not_found("Trade", &id))?;
 
     Ok(Json(TradeResponse::from(&trade)))
+}
+
+// ============================================================================
+// MM Performance DTOs
+// ============================================================================
+
+/// MM performance metrics response DTO.
+#[derive(Debug, Clone, Serialize)]
+pub struct MmPerformanceResponse {
+    /// Market maker identifier.
+    pub mm_id: String,
+    /// Response rate percentage (0-100), or null if no RFQs sent.
+    pub response_rate_pct: Option<f64>,
+    /// Average response time in milliseconds, or null if no quotes received.
+    pub avg_response_time_ms: Option<f64>,
+    /// Quote-to-trade conversion percentage (0-100), or null if no quotes provided.
+    pub quote_to_trade_pct: Option<f64>,
+    /// Average rank across all quotes (lower = more competitive), or null if no quotes.
+    pub competitiveness_score: Option<f64>,
+    /// Reject rate percentage (0-100), or null if no accepts requested.
+    pub reject_rate_pct: Option<f64>,
+    /// Total RFQs sent to this MM in the window.
+    pub total_rfqs_received: u64,
+    /// Total quotes provided by this MM in the window.
+    pub total_quotes_provided: u64,
+    /// Total trades executed from this MM's quotes in the window.
+    pub total_trades_executed: u64,
+    /// Start of the rolling window (ISO 8601).
+    pub window_start: String,
+    /// End of the rolling window (ISO 8601).
+    pub window_end: String,
+}
+
+impl From<&MmPerformanceMetrics> for MmPerformanceResponse {
+    fn from(m: &MmPerformanceMetrics) -> Self {
+        Self {
+            mm_id: m.mm_id().to_string(),
+            response_rate_pct: m.response_rate_pct(),
+            avg_response_time_ms: m.avg_response_time_ms(),
+            quote_to_trade_pct: m.quote_to_trade_pct(),
+            competitiveness_score: m.competitiveness_score(),
+            reject_rate_pct: m.reject_rate_pct(),
+            total_rfqs_received: m.total_rfqs_received(),
+            total_quotes_provided: m.total_quotes_provided(),
+            total_trades_executed: m.total_trades_executed(),
+            window_start: m.window_start().to_iso8601(),
+            window_end: m.window_end().to_iso8601(),
+        }
+    }
+}
+
+/// Query parameters for MM performance listing.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MmPerformanceFilter {
+    /// Minimum response rate percentage for filtering eligible MMs.
+    pub min_response_rate: Option<f64>,
+}
+
+// ============================================================================
+// MM Performance Handlers
+// ============================================================================
+
+/// List MM performance metrics for all tracked market makers.
+///
+/// Optionally filter by minimum response rate via `?min_response_rate=80.0`.
+///
+/// # Errors
+///
+/// Returns `INTERNAL_ERROR` if the tracker is unavailable or computation fails.
+#[instrument(skip(state))]
+pub async fn list_mm_performance(
+    State(state): State<Arc<AppState>>,
+    Query(filter): Query<MmPerformanceFilter>,
+) -> Result<Json<Vec<MmPerformanceResponse>>, (StatusCode, Json<ErrorResponse>)> {
+    info!("Listing MM performance metrics");
+
+    let tracker = state
+        .mm_performance_tracker
+        .as_ref()
+        .ok_or_else(|| internal_error("mm performance tracker not configured"))?;
+
+    let all_metrics = tracker.get_all_metrics().await.map_err(|e| {
+        error!("Failed to get MM metrics: {}", e);
+        internal_error(&e.to_string())
+    })?;
+
+    let responses: Vec<MmPerformanceResponse> = all_metrics
+        .iter()
+        .filter(|m| {
+            filter
+                .min_response_rate
+                .is_none_or(|min| m.is_eligible(min))
+        })
+        .map(MmPerformanceResponse::from)
+        .collect();
+
+    Ok(Json(responses))
+}
+
+/// Get performance metrics for a specific market maker.
+///
+/// # Errors
+///
+/// Returns `INTERNAL_ERROR` if the tracker is unavailable or computation fails.
+#[instrument(skip(state))]
+pub async fn get_mm_performance(
+    State(state): State<Arc<AppState>>,
+    Path(mm_id): Path<String>,
+) -> Result<Json<MmPerformanceResponse>, (StatusCode, Json<ErrorResponse>)> {
+    info!("Getting MM performance for: {}", mm_id);
+
+    if mm_id.is_empty() {
+        return Err(validation_error("mm_id cannot be empty"));
+    }
+
+    let tracker = state
+        .mm_performance_tracker
+        .as_ref()
+        .ok_or_else(|| internal_error("mm performance tracker not configured"))?;
+
+    let counterparty_id = CounterpartyId::new(&mm_id);
+
+    let metrics = tracker.get_metrics(&counterparty_id).await.map_err(|e| {
+        error!("Failed to get MM metrics for {}: {}", mm_id, e);
+        internal_error(&e.to_string())
+    })?;
+
+    Ok(Json(MmPerformanceResponse::from(&metrics)))
 }
 
 // ============================================================================

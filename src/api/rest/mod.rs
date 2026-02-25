@@ -3,7 +3,8 @@
 //! REST endpoints using axum for management operations.
 //!
 //! This module provides a complete REST API for the OTC RFQ system,
-//! including endpoints for RFQ management, venue configuration, and trade queries.
+//! including endpoints for RFQ management, venue configuration, trade queries,
+//! and market maker performance metrics.
 //!
 //! # Endpoints
 //!
@@ -21,6 +22,10 @@
 //! - `GET /api/v1/trades` - List trades with filtering and pagination
 //! - `GET /api/v1/trades/{id}` - Get trade by ID
 //!
+//! ## MM Performance (admin)
+//! - `GET /api/v1/mm-performance` - List all MM performance metrics
+//! - `GET /api/v1/mm-performance/{mm_id}` - Get specific MM performance
+//!
 //! ## Health
 //! - `GET /api/v1/health` - Health check endpoint
 //!
@@ -34,6 +39,7 @@
 //!     rfq_repository: /* ... */,
 //!     venue_repository: /* ... */,
 //!     trade_repository: /* ... */,
+//!     mm_performance_tracker: None,
 //! });
 //!
 //! let router = create_router(state);
@@ -46,8 +52,9 @@ pub mod handlers;
 pub mod routes;
 
 pub use handlers::{
-    AppState, CreateRfqRequest, ErrorResponse, HealthResponse, PaginatedResponse, PaginationMeta,
-    PaginationParams, RfqFilter, RfqResponse, TradeFilter, TradeRepository, TradeResponse,
-    UpdateVenueRequest, VenueRepository, VenueResponse,
+    AppState, CreateRfqRequest, ErrorResponse, HealthResponse, MmPerformanceFilter,
+    MmPerformanceResponse, PaginatedResponse, PaginationMeta, PaginationParams, RfqFilter,
+    RfqResponse, TradeFilter, TradeRepository, TradeResponse, UpdateVenueRequest, VenueRepository,
+    VenueResponse,
 };
 pub use routes::create_router;
