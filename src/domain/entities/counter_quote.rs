@@ -22,7 +22,7 @@
 //!     Quantity::new(1.0).unwrap(),
 //!     Timestamp::now().add_secs(60),
 //!     1,
-//! ).build();
+//! ).build().unwrap();
 //!
 //! assert_eq!(counter.round(), 1);
 //! assert!(!counter.is_expired());
@@ -63,7 +63,7 @@ use std::fmt;
 ///     Quantity::new(1.5).unwrap(),
 ///     Timestamp::now().add_secs(120),
 ///     1,
-/// ).build();
+/// ).build().unwrap();
 ///
 /// assert!(counter.price().is_positive());
 /// ```
@@ -304,7 +304,7 @@ impl fmt::Display for CounterQuote {
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(60),
 ///     1,
-/// ).build();
+/// ).build().unwrap();
 /// ```
 #[must_use = "builders do nothing unless .build() is called"]
 pub struct CounterQuoteBuilder {
@@ -340,11 +340,33 @@ impl CounterQuoteBuilder {
         }
     }
 
-    /// Builds the counter-quote without validation.
+    /// Builds and validates the counter-quote.
     ///
-    /// For production use, prefer [`CounterQuote::new`] which validates inputs.
+    /// Delegates to [`CounterQuote::new`] so all invariants are checked.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`CounterQuote::new`].
+    pub fn build(self) -> DomainResult<CounterQuote> {
+        CounterQuote::new(
+            self.original_quote_id,
+            self.rfq_id,
+            self.from_account,
+            self.counter_price,
+            self.counter_quantity,
+            self.valid_until,
+            self.round,
+        )
+    }
+
+    /// Builds the counter-quote **without** validation.
+    ///
+    /// # Safety
+    ///
+    /// Only use this for reconstruction from trusted storage or in tests
+    /// where the caller guarantees all invariants hold.
     #[must_use]
-    pub fn build(self) -> CounterQuote {
+    pub fn build_unchecked(self) -> CounterQuote {
         CounterQuote {
             id: QuoteId::new_v4(),
             original_quote_id: self.original_quote_id,
@@ -473,10 +495,27 @@ mod tests {
                 future_timestamp(),
                 2,
             )
-            .build();
+            .build()
+            .unwrap();
 
             assert_eq!(counter.round(), 2);
             assert!(counter.price().is_positive());
+        }
+
+        #[test]
+        fn builder_validates_inputs() {
+            let result = CounterQuoteBuilder::new(
+                QuoteId::new_v4(),
+                RfqId::new_v4(),
+                CounterpartyId::new("mm-1"),
+                Price::zero(),
+                test_quantity(),
+                future_timestamp(),
+                1,
+            )
+            .build();
+
+            assert!(matches!(result, Err(DomainError::InvalidPrice(_))));
         }
     }
 
@@ -494,7 +533,8 @@ mod tests {
 
             let counter =
                 CounterQuoteBuilder::new(original_id, rfq_id, from.clone(), price, qty, valid, 3)
-                    .build();
+                    .build()
+                    .unwrap();
 
             assert_eq!(counter.original_quote_id(), original_id);
             assert_eq!(counter.rfq_id(), rfq_id);
@@ -520,7 +560,8 @@ mod tests {
                 future_timestamp(),
                 1,
             )
-            .build();
+            .build()
+            .unwrap();
 
             let display = counter.to_string();
             assert!(display.contains("CounterQuote"));
@@ -543,7 +584,8 @@ mod tests {
                 future_timestamp(),
                 1,
             )
-            .build();
+            .build()
+            .unwrap();
 
             let json = serde_json::to_string(&counter).unwrap();
             let deserialized: CounterQuote = serde_json::from_str(&json).unwrap();

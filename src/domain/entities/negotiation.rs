@@ -31,7 +31,7 @@
 //!     CounterpartyId::new("mm-1"),
 //!     OrderSide::Buy,
 //!     3,
-//! );
+//! ).unwrap();
 //!
 //! assert_eq!(negotiation.state(), NegotiationState::Open);
 //! assert_eq!(negotiation.round_count(), 0);
@@ -47,6 +47,9 @@ use std::fmt;
 
 /// Default maximum number of negotiation rounds.
 pub const DEFAULT_MAX_ROUNDS: u8 = 3;
+
+/// Absolute maximum number of negotiation rounds allowed.
+pub const MAX_ALLOWED_ROUNDS: u8 = 10;
 
 /// A single round in a negotiation, containing a counter-quote and optional response.
 ///
@@ -69,7 +72,7 @@ pub const DEFAULT_MAX_ROUNDS: u8 = 3;
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(60),
 ///     1,
-/// ).build();
+/// ).build().unwrap();
 ///
 /// let round = NegotiationRound::new(1, counter);
 /// assert_eq!(round.round_number(), 1);
@@ -192,7 +195,7 @@ impl fmt::Display for NegotiationRound {
 ///     CounterpartyId::new("mm-1"),
 ///     OrderSide::Buy,
 ///     3,
-/// );
+/// ).unwrap();
 ///
 /// let counter = CounterQuoteBuilder::new(
 ///     QuoteId::new_v4(),
@@ -202,7 +205,7 @@ impl fmt::Display for NegotiationRound {
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(60),
 ///     1,
-/// ).build();
+/// ).build().unwrap();
 ///
 /// assert!(neg.submit_counter(counter).is_ok());
 /// assert_eq!(neg.state(), NegotiationState::CounterPending);
@@ -240,17 +243,31 @@ impl Negotiation {
     /// * `requester` - The client requesting the quote
     /// * `mm_account` - The market maker providing quotes
     /// * `side` - The order side (Buy/Sell), determines price improvement direction
-    /// * `max_rounds` - Maximum number of rounds allowed
-    #[must_use]
+    /// * `max_rounds` - Maximum number of rounds allowed (1..=10)
+    ///
+    /// # Errors
+    ///
+    /// Returns `DomainError::ValidationError` if `max_rounds` is 0 or exceeds
+    /// [`MAX_ALLOWED_ROUNDS`].
     pub fn new(
         rfq_id: RfqId,
         requester: CounterpartyId,
         mm_account: CounterpartyId,
         side: OrderSide,
         max_rounds: u8,
-    ) -> Self {
+    ) -> DomainResult<Self> {
+        if max_rounds == 0 {
+            return Err(DomainError::ValidationError(
+                "max_rounds must be >= 1".to_string(),
+            ));
+        }
+        if max_rounds > MAX_ALLOWED_ROUNDS {
+            return Err(DomainError::ValidationError(
+                format!("max_rounds must be <= {MAX_ALLOWED_ROUNDS}"),
+            ));
+        }
         let now = Timestamp::now();
-        Self {
+        Ok(Self {
             id: NegotiationId::new_v4(),
             rfq_id,
             requester,
@@ -261,7 +278,7 @@ impl Negotiation {
             state: NegotiationState::Open,
             created_at: now,
             updated_at: now,
-        }
+        })
     }
 
     /// Creates a negotiation with a specific ID (for reconstruction from storage).
@@ -605,7 +622,7 @@ mod tests {
     }
 
     fn create_test_negotiation(side: OrderSide) -> Negotiation {
-        Negotiation::new(test_rfq_id(), test_requester(), test_mm(), side, 3)
+        Negotiation::new(test_rfq_id(), test_requester(), test_mm(), side, 3).unwrap()
     }
 
     fn make_counter(rfq_id: RfqId, from: CounterpartyId, price: f64, round: u8) -> CounterQuote {
@@ -619,6 +636,7 @@ mod tests {
             round,
         )
         .build()
+        .unwrap()
     }
 
     mod construction {
@@ -640,13 +658,47 @@ mod tests {
             let rfq_id = test_rfq_id();
             let requester = test_requester();
             let mm = test_mm();
-            let neg = Negotiation::new(rfq_id, requester.clone(), mm.clone(), OrderSide::Sell, 5);
+            let neg =
+                Negotiation::new(rfq_id, requester.clone(), mm.clone(), OrderSide::Sell, 5)
+                    .unwrap();
 
             assert_eq!(neg.rfq_id(), rfq_id);
             assert_eq!(neg.requester(), &requester);
             assert_eq!(neg.mm_account(), &mm);
             assert_eq!(neg.side(), OrderSide::Sell);
             assert_eq!(neg.max_rounds(), 5);
+        }
+
+        #[test]
+        fn new_fails_with_zero_max_rounds() {
+            let result =
+                Negotiation::new(test_rfq_id(), test_requester(), test_mm(), OrderSide::Buy, 0);
+            assert!(matches!(result, Err(DomainError::ValidationError(_))));
+        }
+
+        #[test]
+        fn new_fails_with_excessive_max_rounds() {
+            let result = Negotiation::new(
+                test_rfq_id(),
+                test_requester(),
+                test_mm(),
+                OrderSide::Buy,
+                MAX_ALLOWED_ROUNDS + 1,
+            );
+            assert!(matches!(result, Err(DomainError::ValidationError(_))));
+        }
+
+        #[test]
+        fn new_accepts_boundary_max_rounds() {
+            let result = Negotiation::new(
+                test_rfq_id(),
+                test_requester(),
+                test_mm(),
+                OrderSide::Buy,
+                MAX_ALLOWED_ROUNDS,
+            );
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().max_rounds(), MAX_ALLOWED_ROUNDS);
         }
     }
 
@@ -734,7 +786,8 @@ mod tests {
                 test_mm(),
                 OrderSide::Buy,
                 2,
-            );
+            )
+            .unwrap();
             let rfq_id = neg.rfq_id();
 
             let c1 = make_counter(rfq_id, test_mm(), 50000.0, 1);
@@ -776,7 +829,7 @@ mod tests {
                 Timestamp::now().sub_secs(60), // expired
                 1,
             )
-            .build();
+            .build_unchecked();
 
             let result = neg.submit_counter(expired_counter);
             assert!(matches!(result, Err(DomainError::QuoteExpired(_))));
