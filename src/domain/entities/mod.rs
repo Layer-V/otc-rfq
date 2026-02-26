@@ -29,7 +29,7 @@ pub use counterparty::{
     Counterparty, CounterpartyLimits, CounterpartyType, InvalidCounterpartyTypeError,
     InvalidKycStatusError, KycStatus, WalletAddress,
 };
-pub use negotiation::{Negotiation, NegotiationRound, DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS};
+pub use negotiation::{DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS, Negotiation, NegotiationRound};
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
 pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
 pub use trade::{InvalidSettlementStateError, SettlementState, Trade};
