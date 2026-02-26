@@ -8,6 +8,7 @@
 
 pub mod circuit_breaker;
 pub mod compliance;
+pub mod price_bounds;
 pub mod quote_aggregation;
 pub mod ranking_strategy;
 pub mod retry;
@@ -19,6 +20,9 @@ pub use compliance::{
     AmlProvider, AmlResult, ComplianceCheckResult, ComplianceConfig, ComplianceFlag,
     ComplianceFlagType, ComplianceServiceImpl, ComplianceSeverity, KycProvider, KycStatus,
     LimitsProvider, LimitsResult, SanctionsProvider, SanctionsResult,
+};
+pub use price_bounds::{
+    FallbackReferencePriceProvider, PriceBoundsValidator, ReferencePriceProvider,
 };
 pub use quote_aggregation::{
     AggregationConfig, AggregationError, AggregationResult, QuoteAggregationEngine,
