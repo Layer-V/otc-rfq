@@ -50,6 +50,7 @@ pub mod negotiation_state;
 pub mod price;
 pub mod quantity;
 pub mod rfq_state;
+pub mod size_negotiation_mode;
 pub mod symbol;
 pub mod timestamp;
 
@@ -65,5 +66,6 @@ pub use negotiation_state::{InvalidNegotiationStateError, NegotiationState};
 pub use price::Price;
 pub use quantity::Quantity;
 pub use rfq_state::{InvalidRfqStateError, RfqState};
+pub use size_negotiation_mode::SizeNegotiationMode;
 pub use symbol::{Symbol, SymbolError};
 pub use timestamp::Timestamp;

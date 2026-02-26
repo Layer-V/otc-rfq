@@ -329,6 +329,7 @@ impl RfqRow {
             instrument,
             side,
             quantity,
+            None, // min_quantity — not yet persisted
             state,
             expires_at,
             quotes,
