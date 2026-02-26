@@ -22,12 +22,13 @@
 //! use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 //! use otc_rfq::domain::value_objects::{
 //!     CounterpartyId, Instrument, OrderSide, Quantity,
+//!     Symbol, AssetClass,
 //! };
 //! use otc_rfq::domain::value_objects::timestamp::Timestamp;
 //!
 //! let rfq = RfqBuilder::new(
 //!     CounterpartyId::new("client-1"),
-//!     Instrument::builder("BTC", "USD").build().unwrap(),
+//!     Instrument::builder(Symbol::new("BTC/USD").unwrap(), AssetClass::CryptoSpot).build(),
 //!     OrderSide::Buy,
 //!     Quantity::new(1.0).unwrap(),
 //!     Timestamp::now().add_secs(300),
@@ -98,12 +99,13 @@ impl ComplianceResult {
 /// use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 /// use otc_rfq::domain::value_objects::{
 ///     CounterpartyId, Instrument, OrderSide, Quantity, RfqState,
+///     Symbol, AssetClass,
 /// };
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
 /// let mut rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     Instrument::builder(Symbol::new("BTC/USD").unwrap(), AssetClass::CryptoSpot).build(),
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),
@@ -616,12 +618,13 @@ impl fmt::Display for Rfq {
 /// use otc_rfq::domain::entities::rfq::RfqBuilder;
 /// use otc_rfq::domain::value_objects::{
 ///     CounterpartyId, Instrument, OrderSide, Quantity,
+///     Symbol, AssetClass,
 /// };
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
 /// let rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     Instrument::builder(Symbol::new("BTC/USD").unwrap(), AssetClass::CryptoSpot).build(),
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),

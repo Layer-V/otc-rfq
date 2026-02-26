@@ -42,8 +42,8 @@ use std::ops::{Add, Sub};
 /// // Add time
 /// let in_one_minute = now.add_secs(60);
 ///
-/// // Check expiration
-/// assert!(!now.is_expired());
+/// // A future timestamp is not expired
+/// assert!(!in_one_minute.is_expired());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -60,8 +60,8 @@ impl Timestamp {
     /// ```
     /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
     ///
-    /// let now = Timestamp::now();
-    /// assert!(!now.is_expired());
+    /// let future = Timestamp::now().add_secs(60);
+    /// assert!(!future.is_expired());
     /// ```
     #[must_use]
     pub fn now() -> Self {
@@ -302,7 +302,7 @@ impl Timestamp {
     ///
     /// let ts = Timestamp::from_secs(1704067200).unwrap();
     /// let iso = ts.to_iso8601();
-    /// assert!(iso.ends_with("Z"));
+    /// assert!(iso.contains("2024-01-01"));
     /// ```
     #[must_use]
     pub fn to_iso8601(&self) -> String {
