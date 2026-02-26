@@ -243,10 +243,11 @@ pub type FixField = (u32, String);
 /// ```
 /// use otc_rfq::infrastructure::venues::fix_messages::QuoteRequestBuilder;
 /// use otc_rfq::domain::value_objects::OrderSide;
+/// use rust_decimal::Decimal;
 ///
 /// let fields = QuoteRequestBuilder::new("QR-001", "BTC/USD")
 ///     .side(OrderSide::Buy)
-///     .quantity(100.0)
+///     .quantity(Decimal::new(100, 0))
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
@@ -479,12 +480,13 @@ impl QuoteMessage {
 /// ```
 /// use otc_rfq::infrastructure::venues::fix_messages::NewOrderSingleBuilder;
 /// use otc_rfq::domain::value_objects::OrderSide;
+/// use rust_decimal::Decimal;
 ///
 /// let fields = NewOrderSingleBuilder::new("ORD-001", "BTC/USD")
 ///     .side(OrderSide::Buy)
-///     .quantity(100.0)
+///     .quantity(Decimal::new(100, 0))
 ///     .previously_quoted("Q-123")
-///     .price(50000.0)
+///     .price(Decimal::new(50000, 0))
 ///     .build();
 /// ```
 #[derive(Debug, Clone)]
