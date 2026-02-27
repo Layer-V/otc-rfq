@@ -9,6 +9,7 @@
 pub mod circuit_breaker;
 pub mod compliance;
 pub mod fill_strategy;
+pub mod price_bounds;
 pub mod quote_aggregation;
 pub mod ranking_strategy;
 pub mod retry;
@@ -22,6 +23,9 @@ pub use compliance::{
     LimitsProvider, LimitsResult, SanctionsProvider, SanctionsResult,
 };
 pub use fill_strategy::{BestPriceFillStrategy, MultiMmFillStrategy, ProRataStrategy};
+pub use price_bounds::{
+    FallbackReferencePriceProvider, PriceBoundsValidator, ReferencePriceProvider,
+};
 pub use quote_aggregation::{
     AggregationConfig, AggregationError, AggregationResult, QuoteAggregationEngine,
 };

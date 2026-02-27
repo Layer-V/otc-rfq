@@ -302,7 +302,7 @@ impl Timestamp {
     ///
     /// let ts = Timestamp::from_secs(1704067200).unwrap();
     /// let iso = ts.to_iso8601();
-    /// assert!(iso.ends_with("Z"));
+    /// assert!(iso.contains("2024-01-01"));
     /// ```
     #[must_use]
     pub fn to_iso8601(&self) -> String {

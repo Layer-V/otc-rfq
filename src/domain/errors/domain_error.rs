@@ -26,6 +26,7 @@ use crate::domain::value_objects::negotiation_state::NegotiationState;
 use crate::domain::value_objects::price::Price;
 use crate::domain::value_objects::quantity::Quantity;
 use crate::domain::value_objects::rfq_state::RfqState;
+use rust_decimal::Decimal;
 use thiserror::Error;
 
 /// Domain-level error with numeric error codes.
@@ -78,6 +79,25 @@ pub enum DomainError {
     /// Invalid timestamp.
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(String),
+
+    /// No reference price available for the instrument.
+    #[error("no reference price available for instrument")]
+    NoReferencePrice,
+
+    /// Proposed price is outside acceptable bounds relative to reference.
+    #[error(
+        "price out of bounds: proposed {proposed}, reference {reference}, deviation {deviation_pct}, max tolerance {max_tolerance_pct}"
+    )]
+    PriceOutOfBounds {
+        /// The proposed price.
+        proposed: Price,
+        /// The reference price.
+        reference: Price,
+        /// The actual deviation as a fractional percentage.
+        deviation_pct: Decimal,
+        /// The maximum allowed tolerance as a fractional percentage.
+        max_tolerance_pct: Decimal,
+    },
 
     /// Generic validation error.
     #[error("validation error: {0}")]
@@ -250,6 +270,8 @@ impl DomainError {
             Self::InvalidSymbol(_) => 1004,
             Self::InvalidId(_) => 1005,
             Self::InvalidTimestamp(_) => 1006,
+            Self::NoReferencePrice => 1007,
+            Self::PriceOutOfBounds { .. } => 1008,
             Self::ValidationError(_) => 1099,
 
             // State errors (2000-2999)
@@ -358,13 +380,20 @@ mod tests {
 
         #[test]
         fn validation_errors_in_range() {
-            let errors = [
+            let errors: Vec<DomainError> = vec![
                 DomainError::InvalidPrice("test".to_string()),
                 DomainError::InvalidQuantity("test".to_string()),
                 DomainError::InvalidState("test".to_string()),
                 DomainError::InvalidSymbol("test".to_string()),
                 DomainError::InvalidId("test".to_string()),
                 DomainError::InvalidTimestamp("test".to_string()),
+                DomainError::NoReferencePrice,
+                DomainError::PriceOutOfBounds {
+                    proposed: Price::new(105.0).unwrap(),
+                    reference: Price::new(100.0).unwrap(),
+                    deviation_pct: Decimal::new(5, 2),
+                    max_tolerance_pct: Decimal::new(5, 2),
+                },
                 DomainError::ValidationError("test".to_string()),
             ];
 
@@ -581,6 +610,17 @@ mod tests {
                 }
                 .code(),
                 2011
+            );
+            assert_eq!(DomainError::NoReferencePrice.code(), 1007);
+            assert_eq!(
+                DomainError::PriceOutOfBounds {
+                    proposed: Price::new(105.0).unwrap(),
+                    reference: Price::new(100.0).unwrap(),
+                    deviation_pct: Decimal::new(5, 2),
+                    max_tolerance_pct: Decimal::new(5, 2),
+                }
+                .code(),
+                1008
             );
             assert_eq!(
                 DomainError::InsufficientLiquidity {
