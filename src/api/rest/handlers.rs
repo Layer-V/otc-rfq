@@ -781,7 +781,8 @@ pub struct MmPerformanceFilter {
 ///
 /// # Errors
 ///
-/// Returns `INTERNAL_ERROR` if the tracker is unavailable or computation fails.
+/// Returns `NOT_IMPLEMENTED` if the tracker is not configured.
+/// Returns `INTERNAL_ERROR` if computation fails.
 #[instrument(skip(state))]
 pub async fn list_mm_performance(
     State(state): State<Arc<AppState>>,
@@ -792,7 +793,7 @@ pub async fn list_mm_performance(
     let tracker = state
         .mm_performance_tracker
         .as_ref()
-        .ok_or_else(|| internal_error("mm performance tracker not configured"))?;
+        .ok_or_else(|| not_implemented("mm performance tracker not configured"))?;
 
     let all_metrics = tracker.get_all_metrics().await.map_err(|e| {
         error!("Failed to get MM metrics: {}", e);
@@ -816,7 +817,8 @@ pub async fn list_mm_performance(
 ///
 /// # Errors
 ///
-/// Returns `INTERNAL_ERROR` if the tracker is unavailable or computation fails.
+/// Returns `NOT_IMPLEMENTED` if the tracker is not configured.
+/// Returns `INTERNAL_ERROR` if computation fails.
 #[instrument(skip(state))]
 pub async fn get_mm_performance(
     State(state): State<Arc<AppState>>,
@@ -831,7 +833,7 @@ pub async fn get_mm_performance(
     let tracker = state
         .mm_performance_tracker
         .as_ref()
-        .ok_or_else(|| internal_error("mm performance tracker not configured"))?;
+        .ok_or_else(|| not_implemented("mm performance tracker not configured"))?;
 
     let counterparty_id = CounterpartyId::new(&mm_id);
 
@@ -934,6 +936,13 @@ fn conflict_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::CONFLICT,
         Json(ErrorResponse::new("CONFLICT", message)),
+    )
+}
+
+fn not_implemented(message: &str) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(ErrorResponse::new("NOT_IMPLEMENTED", message)),
     )
 }
 

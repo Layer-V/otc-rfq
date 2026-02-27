@@ -45,7 +45,6 @@ use crate::domain::entities::allocation::Allocation;
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::value_objects::size_negotiation_mode::SizeNegotiationMode;
 use crate::domain::value_objects::{OrderSide, Quantity};
-use rust_decimal::prelude::ToPrimitive;
 use std::fmt;
 
 /// Trait for multi-MM fill allocation strategies.
@@ -249,44 +248,30 @@ impl MultiMmFillStrategy for ProRataStrategy {
         let available = total_quoted_quantity(quotes)?;
         let effective_qty = enforce_mode(mode, target_qty, available)?;
 
-        // Compute total quoted quantity for ratio calculation
-        let total_f64 = available.get().to_f64().ok_or_else(|| {
-            DomainError::InvalidArithmeticValue(
-                "total quoted quantity cannot be converted to f64".to_string(),
-            )
-        })?;
-        if total_f64 == 0.0 {
+        // Compute total quoted quantity for ratio calculation (Decimal arithmetic)
+        let total_decimal = available.get();
+        if total_decimal.is_zero() {
             return Err(DomainError::InvalidQuantity(
                 "total quoted quantity is zero".to_string(),
             ));
         }
 
-        let effective_f64 = effective_qty.get().to_f64().ok_or_else(|| {
-            DomainError::InvalidArithmeticValue(
-                "effective quantity cannot be converted to f64".to_string(),
-            )
-        })?;
         let mut allocations = Vec::with_capacity(quotes.len());
         let mut allocated_so_far = Quantity::zero();
 
         for (i, rq) in quotes.iter().enumerate() {
-            let quote_qty_f64 = rq.quote.quantity().get().to_f64().ok_or_else(|| {
-                DomainError::InvalidArithmeticValue(
-                    "quote quantity cannot be converted to f64".to_string(),
-                )
-            })?;
-            let ratio = quote_qty_f64 / total_f64;
-
             let is_last = i == quotes.len().saturating_sub(1);
 
             let alloc_qty = if is_last {
                 // Last allocation gets the remainder to avoid rounding drift
                 effective_qty.safe_sub(allocated_so_far)?
             } else {
-                let raw_qty = effective_f64 * ratio;
+                // ratio = quote_qty / total, then alloc = effective * ratio
+                let raw_qty = effective_qty
+                    .safe_mul(rq.quote.quantity().get())?
+                    .safe_div(total_decimal)?;
                 // Cap at this quote's available quantity
-                let capped = raw_qty.min(quote_qty_f64);
-                Quantity::new(capped)?
+                raw_qty.min(rq.quote.quantity())
             };
 
             if alloc_qty.is_positive() {
@@ -477,11 +462,13 @@ mod tests {
             assert_eq!(allocs.len(), 2);
             // v1 has 60% of total (6/10), so ~3.0
             // v2 gets the remainder ~2.0
-            let total: f64 = allocs
+            let total: Quantity = allocs
                 .iter()
-                .map(|a| a.allocated_quantity().get().to_f64().unwrap_or(0.0))
-                .sum();
-            assert!((total - 5.0).abs() < 0.0001);
+                .try_fold(Quantity::zero(), |acc, a| {
+                    acc.safe_add(a.allocated_quantity())
+                })
+                .unwrap();
+            assert_eq!(total, Quantity::new(5.0).unwrap());
         }
 
         #[test]

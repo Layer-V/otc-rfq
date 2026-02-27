@@ -506,7 +506,7 @@ impl Negotiation {
             NegotiationState::Open => self.transition_to(NegotiationState::CounterPending)?,
             NegotiationState::CounterPending => {
                 // CounterPending → Open → CounterPending (respond then new counter)
-                self.state = NegotiationState::Open;
+                self.transition_to(NegotiationState::Open)?;
                 self.transition_to(NegotiationState::CounterPending)?;
             }
             _ => {

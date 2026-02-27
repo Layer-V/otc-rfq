@@ -86,7 +86,7 @@ pub enum DomainError {
 
     /// Proposed price is outside acceptable bounds relative to reference.
     #[error(
-        "price out of bounds: proposed {proposed}, reference {reference}, deviation {deviation_pct}, max tolerance {max_tolerance_pct}"
+        "price out of bounds: proposed {proposed}, reference {reference}, deviation {deviation_pct} (fractional), max tolerance {max_tolerance_pct} (fractional)"
     )]
     PriceOutOfBounds {
         /// The proposed price.
