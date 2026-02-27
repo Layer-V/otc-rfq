@@ -24,7 +24,9 @@
 use crate::domain::value_objects::arithmetic::ArithmeticError;
 use crate::domain::value_objects::negotiation_state::NegotiationState;
 use crate::domain::value_objects::price::Price;
+use crate::domain::value_objects::quantity::Quantity;
 use crate::domain::value_objects::rfq_state::RfqState;
+use rust_decimal::Decimal;
 use thiserror::Error;
 
 /// Domain-level error with numeric error codes.
@@ -77,6 +79,25 @@ pub enum DomainError {
     /// Invalid timestamp.
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(String),
+
+    /// No reference price available for the instrument.
+    #[error("no reference price available for instrument")]
+    NoReferencePrice,
+
+    /// Proposed price is outside acceptable bounds relative to reference.
+    #[error(
+        "price out of bounds: proposed {proposed}, reference {reference}, deviation {deviation_pct}, max tolerance {max_tolerance_pct}"
+    )]
+    PriceOutOfBounds {
+        /// The proposed price.
+        proposed: Price,
+        /// The reference price.
+        reference: Price,
+        /// The actual deviation as a fractional percentage.
+        deviation_pct: Decimal,
+        /// The maximum allowed tolerance as a fractional percentage.
+        max_tolerance_pct: Decimal,
+    },
 
     /// Generic validation error.
     #[error("validation error: {0}")]
@@ -151,6 +172,33 @@ pub enum DomainError {
         to: NegotiationState,
     },
 
+    /// Insufficient liquidity to fill the requested quantity.
+    #[error("insufficient liquidity: available {available}, requested {requested}")]
+    InsufficientLiquidity {
+        /// The total available quantity across all quotes.
+        available: Quantity,
+        /// The requested target quantity.
+        requested: Quantity,
+    },
+
+    /// Fill quantity does not meet the minimum quantity threshold.
+    #[error("minimum quantity not met: filled {filled}, minimum {minimum}")]
+    MinQuantityNotMet {
+        /// The actual filled quantity.
+        filled: Quantity,
+        /// The required minimum quantity.
+        minimum: Quantity,
+    },
+
+    /// Sum of allocations does not match the target quantity.
+    #[error("allocation mismatch: allocated {allocated}, target {target}")]
+    AllocationMismatch {
+        /// The total allocated quantity.
+        allocated: Quantity,
+        /// The expected target quantity.
+        target: Quantity,
+    },
+
     // ========================================================================
     // Compliance Errors (3000-3999)
     // ========================================================================
@@ -222,6 +270,8 @@ impl DomainError {
             Self::InvalidSymbol(_) => 1004,
             Self::InvalidId(_) => 1005,
             Self::InvalidTimestamp(_) => 1006,
+            Self::NoReferencePrice => 1007,
+            Self::PriceOutOfBounds { .. } => 1008,
             Self::ValidationError(_) => 1099,
 
             // State errors (2000-2999)
@@ -236,6 +286,9 @@ impl DomainError {
             Self::NoPriceImprovement { .. } => 2009,
             Self::NegotiationExpired(_) => 2010,
             Self::InvalidNegotiationStateTransition { .. } => 2011,
+            Self::InsufficientLiquidity { .. } => 2012,
+            Self::MinQuantityNotMet { .. } => 2013,
+            Self::AllocationMismatch { .. } => 2014,
             Self::OperationNotAllowed(_) => 2099,
 
             // Compliance errors (3000-3999)
@@ -327,13 +380,20 @@ mod tests {
 
         #[test]
         fn validation_errors_in_range() {
-            let errors = [
+            let errors: Vec<DomainError> = vec![
                 DomainError::InvalidPrice("test".to_string()),
                 DomainError::InvalidQuantity("test".to_string()),
                 DomainError::InvalidState("test".to_string()),
                 DomainError::InvalidSymbol("test".to_string()),
                 DomainError::InvalidId("test".to_string()),
                 DomainError::InvalidTimestamp("test".to_string()),
+                DomainError::NoReferencePrice,
+                DomainError::PriceOutOfBounds {
+                    proposed: Price::new(105.0).unwrap(),
+                    reference: Price::new(100.0).unwrap(),
+                    deviation_pct: Decimal::new(5, 2),
+                    max_tolerance_pct: Decimal::new(5, 2),
+                },
                 DomainError::ValidationError("test".to_string()),
             ];
 
@@ -371,6 +431,18 @@ mod tests {
                 DomainError::InvalidNegotiationStateTransition {
                     from: NegotiationState::Open,
                     to: NegotiationState::Open,
+                },
+                DomainError::InsufficientLiquidity {
+                    available: Quantity::new(1.0).unwrap(),
+                    requested: Quantity::new(10.0).unwrap(),
+                },
+                DomainError::MinQuantityNotMet {
+                    filled: Quantity::new(0.5).unwrap(),
+                    minimum: Quantity::new(1.0).unwrap(),
+                },
+                DomainError::AllocationMismatch {
+                    allocated: Quantity::new(9.0).unwrap(),
+                    target: Quantity::new(10.0).unwrap(),
                 },
                 DomainError::OperationNotAllowed("test".to_string()),
             ];
@@ -538,6 +610,41 @@ mod tests {
                 }
                 .code(),
                 2011
+            );
+            assert_eq!(DomainError::NoReferencePrice.code(), 1007);
+            assert_eq!(
+                DomainError::PriceOutOfBounds {
+                    proposed: Price::new(105.0).unwrap(),
+                    reference: Price::new(100.0).unwrap(),
+                    deviation_pct: Decimal::new(5, 2),
+                    max_tolerance_pct: Decimal::new(5, 2),
+                }
+                .code(),
+                1008
+            );
+            assert_eq!(
+                DomainError::InsufficientLiquidity {
+                    available: Quantity::new(1.0).unwrap(),
+                    requested: Quantity::new(10.0).unwrap(),
+                }
+                .code(),
+                2012
+            );
+            assert_eq!(
+                DomainError::MinQuantityNotMet {
+                    filled: Quantity::new(0.5).unwrap(),
+                    minimum: Quantity::new(1.0).unwrap(),
+                }
+                .code(),
+                2013
+            );
+            assert_eq!(
+                DomainError::AllocationMismatch {
+                    allocated: Quantity::new(9.0).unwrap(),
+                    target: Quantity::new(10.0).unwrap(),
+                }
+                .code(),
+                2014
             );
             assert_eq!(DomainError::ComplianceBlocked("".to_string()).code(), 3001);
             assert_eq!(DomainError::KycFailed("".to_string()).code(), 3002);

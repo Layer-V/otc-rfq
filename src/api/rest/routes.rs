@@ -35,8 +35,8 @@
 //! ```
 
 use crate::api::rest::handlers::{
-    AppState, cancel_rfq, create_rfq, get_rfq, get_trade, health_check, list_rfqs, list_trades,
-    list_venues, update_venue,
+    AppState, cancel_rfq, create_rfq, get_mm_performance, get_rfq, get_trade, health_check,
+    list_mm_performance, list_rfqs, list_trades, list_venues, update_venue,
 };
 use axum::{Router, routing::get, routing::put};
 use std::sync::Arc;
@@ -78,12 +78,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_trades))
         .route("/{id}", get(get_trade));
 
+    // MM Performance routes
+    let mm_performance_routes = Router::new()
+        .route("/", get(list_mm_performance))
+        .route("/{mm_id}", get(get_mm_performance));
+
     // API v1 routes
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
-        .nest("/trades", trade_routes);
+        .nest("/trades", trade_routes)
+        .nest("/mm-performance", mm_performance_routes);
 
     // Main router with middleware
     Router::new()
@@ -115,11 +121,16 @@ pub fn create_test_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_trades))
         .route("/{id}", get(get_trade));
 
+    let mm_performance_routes = Router::new()
+        .route("/", get(list_mm_performance))
+        .route("/{mm_id}", get(get_mm_performance));
+
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
-        .nest("/trades", trade_routes);
+        .nest("/trades", trade_routes)
+        .nest("/mm-performance", mm_performance_routes);
 
     Router::new().nest("/api/v1", api_v1).with_state(state)
 }
@@ -203,6 +214,7 @@ mod tests {
             rfq_repository: Arc::new(MockRfqRepository::default()),
             venue_repository: Arc::new(MockVenueRepository::default()),
             trade_repository: Arc::new(MockTradeRepository::default()),
+            mm_performance_tracker: None,
         })
     }
 
