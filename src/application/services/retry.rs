@@ -36,7 +36,7 @@
 //! # }
 //! ```
 
-use rand::Rng;
+use rand::RngExt;
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;

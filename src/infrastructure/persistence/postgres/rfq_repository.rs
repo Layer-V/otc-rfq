@@ -159,6 +159,7 @@ impl RfqRepository for PostgresRfqRepository {
             RfqState::Created.to_string(),
             RfqState::QuoteRequesting.to_string(),
             RfqState::QuotesReceived.to_string(),
+            RfqState::Negotiating.to_string(),
             RfqState::ClientSelecting.to_string(),
             RfqState::Executing.to_string(),
         ];
@@ -244,6 +245,7 @@ impl RfqRepository for PostgresRfqRepository {
             RfqState::Created.to_string(),
             RfqState::QuoteRequesting.to_string(),
             RfqState::QuotesReceived.to_string(),
+            RfqState::Negotiating.to_string(),
             RfqState::ClientSelecting.to_string(),
             RfqState::Executing.to_string(),
         ];
@@ -327,6 +329,7 @@ impl RfqRow {
             instrument,
             side,
             quantity,
+            None, // min_quantity — not yet persisted
             state,
             expires_at,
             quotes,

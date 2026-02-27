@@ -232,6 +232,7 @@ impl From<DomainRfqState> for proto::RfqState {
             DomainRfqState::Failed => proto::RfqState::Failed,
             DomainRfqState::Cancelled => proto::RfqState::Cancelled,
             DomainRfqState::Expired => proto::RfqState::Expired,
+            DomainRfqState::Negotiating => proto::RfqState::Negotiating,
         }
     }
 }
@@ -258,6 +259,7 @@ pub fn proto_rfq_state_to_domain(value: i32) -> Result<DomainRfqState, Conversio
         Ok(proto::RfqState::Failed) => Ok(DomainRfqState::Failed),
         Ok(proto::RfqState::Cancelled) => Ok(DomainRfqState::Cancelled),
         Ok(proto::RfqState::Expired) => Ok(DomainRfqState::Expired),
+        Ok(proto::RfqState::Negotiating) => Ok(DomainRfqState::Negotiating),
         Ok(proto::RfqState::Unspecified) | Err(_) => Err(ConversionError::InvalidEnum {
             enum_name: "RfqState",
             value,
@@ -567,6 +569,7 @@ mod tests {
             (DomainRfqState::Failed, proto::RfqState::Failed),
             (DomainRfqState::Cancelled, proto::RfqState::Cancelled),
             (DomainRfqState::Expired, proto::RfqState::Expired),
+            (DomainRfqState::Negotiating, proto::RfqState::Negotiating),
         ];
 
         for (domain, expected_proto) in states {

@@ -21,13 +21,16 @@
 //! ```
 //! use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 //! use otc_rfq::domain::value_objects::{
-//!     CounterpartyId, Instrument, OrderSide, Quantity,
+//!     CounterpartyId, Instrument, OrderSide, Quantity, Symbol,
 //! };
+//! use otc_rfq::domain::value_objects::enums::AssetClass;
 //! use otc_rfq::domain::value_objects::timestamp::Timestamp;
 //!
+//! let symbol = Symbol::new("BTC/USD").unwrap();
+//! let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 //! let rfq = RfqBuilder::new(
 //!     CounterpartyId::new("client-1"),
-//!     Instrument::builder("BTC", "USD").build().unwrap(),
+//!     instrument,
 //!     OrderSide::Buy,
 //!     Quantity::new(1.0).unwrap(),
 //!     Timestamp::now().add_secs(300),
@@ -97,13 +100,16 @@ impl ComplianceResult {
 /// ```
 /// use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 /// use otc_rfq::domain::value_objects::{
-///     CounterpartyId, Instrument, OrderSide, Quantity, RfqState,
+///     CounterpartyId, Instrument, OrderSide, Quantity, RfqState, Symbol,
 /// };
+/// use otc_rfq::domain::value_objects::enums::AssetClass;
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
+/// let symbol = Symbol::new("BTC/USD").unwrap();
+/// let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 /// let mut rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     instrument,
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),
@@ -125,6 +131,8 @@ pub struct Rfq {
     side: OrderSide,
     /// Requested quantity.
     quantity: Quantity,
+    /// Optional minimum acceptable quantity for partial fills.
+    min_quantity: Option<Quantity>,
     /// Current state in the lifecycle.
     state: RfqState,
     /// When this RFQ expires.
@@ -177,6 +185,7 @@ impl Rfq {
             instrument,
             side,
             quantity,
+            min_quantity: None,
             state: RfqState::Created,
             expires_at,
             quotes: Vec::new(),
@@ -203,6 +212,7 @@ impl Rfq {
         instrument: Instrument,
         side: OrderSide,
         quantity: Quantity,
+        min_quantity: Option<Quantity>,
         state: RfqState,
         expires_at: Timestamp,
         quotes: Vec<Quote>,
@@ -219,6 +229,7 @@ impl Rfq {
             instrument,
             side,
             quantity,
+            min_quantity,
             state,
             expires_at,
             quotes,
@@ -309,6 +320,13 @@ impl Rfq {
     #[must_use]
     pub fn quantity(&self) -> Quantity {
         self.quantity
+    }
+
+    /// Returns the minimum acceptable quantity for partial fills, if set.
+    #[inline]
+    #[must_use]
+    pub fn min_quantity(&self) -> Option<Quantity> {
+        self.min_quantity
     }
 
     /// Returns the current state.
@@ -615,13 +633,16 @@ impl fmt::Display for Rfq {
 /// ```
 /// use otc_rfq::domain::entities::rfq::RfqBuilder;
 /// use otc_rfq::domain::value_objects::{
-///     CounterpartyId, Instrument, OrderSide, Quantity,
+///     CounterpartyId, Instrument, OrderSide, Quantity, Symbol,
 /// };
+/// use otc_rfq::domain::value_objects::enums::AssetClass;
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
+/// let symbol = Symbol::new("BTC/USD").unwrap();
+/// let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 /// let rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     instrument,
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),
@@ -633,6 +654,7 @@ pub struct RfqBuilder {
     instrument: Instrument,
     side: OrderSide,
     quantity: Quantity,
+    min_quantity: Option<Quantity>,
     expires_at: Timestamp,
 }
 
@@ -651,8 +673,16 @@ impl RfqBuilder {
             instrument,
             side,
             quantity,
+            min_quantity: None,
             expires_at,
         }
+    }
+
+    /// Sets the minimum acceptable quantity for partial fills.
+    #[must_use]
+    pub fn min_quantity(mut self, min_quantity: Quantity) -> Self {
+        self.min_quantity = Some(min_quantity);
+        self
     }
 
     /// Builds the RFQ without validation.
@@ -667,6 +697,7 @@ impl RfqBuilder {
             instrument: self.instrument,
             side: self.side,
             quantity: self.quantity,
+            min_quantity: self.min_quantity,
             state: RfqState::Created,
             expires_at: self.expires_at,
             quotes: Vec::new(),

@@ -8,9 +8,9 @@
 //! # State Machine
 //!
 //! ```text
-//! Created → QuoteRequesting → QuotesReceived → ClientSelecting → Executing → Executed
-//!     ↓           ↓                 ↓                ↓              ↓
-//!     └───────────┴─────────────────┴────────────────┴──────────────┴→ Failed/Cancelled/Expired
+//! Created → QuoteRequesting → QuotesReceived → Negotiating → ClientSelecting → Executing → Executed
+//!     ↓           ↓                 ↓     ↗         ↓              ↓              ↓
+//!     └───────────┴─────────────────┴─────┴─────────┴──────────────┴──────────────┴→ Failed/Cancelled/Expired
 //! ```
 //!
 //! # Examples
@@ -81,6 +81,9 @@ pub enum RfqState {
 
     /// RFQ expired without execution (terminal).
     Expired = 8,
+
+    /// Counter-quote negotiation is in progress.
+    Negotiating = 9,
 }
 
 impl RfqState {
@@ -113,7 +116,8 @@ impl RfqState {
     /// Enforces the RFQ state machine rules:
     /// - Created → QuoteRequesting, Cancelled, Expired
     /// - QuoteRequesting → QuotesReceived, Failed, Cancelled, Expired
-    /// - QuotesReceived → ClientSelecting, Failed, Cancelled, Expired
+    /// - QuotesReceived → ClientSelecting, Negotiating, Failed, Cancelled, Expired
+    /// - Negotiating → ClientSelecting, Failed, Cancelled, Expired
     /// - ClientSelecting → Executing, Failed, Cancelled, Expired
     /// - Executing → Executed, Failed
     /// - Terminal states → (none)
@@ -151,9 +155,15 @@ impl RfqState {
                 | (Self::QuoteRequesting, Self::Expired)
                 // From QuotesReceived
                 | (Self::QuotesReceived, Self::ClientSelecting)
+                | (Self::QuotesReceived, Self::Negotiating)
                 | (Self::QuotesReceived, Self::Failed)
                 | (Self::QuotesReceived, Self::Cancelled)
                 | (Self::QuotesReceived, Self::Expired)
+                // From Negotiating
+                | (Self::Negotiating, Self::ClientSelecting)
+                | (Self::Negotiating, Self::Failed)
+                | (Self::Negotiating, Self::Cancelled)
+                | (Self::Negotiating, Self::Expired)
                 // From ClientSelecting
                 | (Self::ClientSelecting, Self::Executing)
                 | (Self::ClientSelecting, Self::Failed)
@@ -189,6 +199,15 @@ impl RfqState {
                 ]
             }
             Self::QuotesReceived => {
+                vec![
+                    Self::ClientSelecting,
+                    Self::Negotiating,
+                    Self::Failed,
+                    Self::Cancelled,
+                    Self::Expired,
+                ]
+            }
+            Self::Negotiating => {
                 vec![
                     Self::ClientSelecting,
                     Self::Failed,
@@ -232,8 +251,19 @@ impl RfqState {
     pub const fn has_quotes(&self) -> bool {
         matches!(
             self,
-            Self::QuotesReceived | Self::ClientSelecting | Self::Executing | Self::Executed
+            Self::QuotesReceived
+                | Self::Negotiating
+                | Self::ClientSelecting
+                | Self::Executing
+                | Self::Executed
         )
+    }
+
+    /// Returns true if this state indicates negotiation is in progress.
+    #[inline]
+    #[must_use]
+    pub const fn is_negotiating(&self) -> bool {
+        matches!(self, Self::Negotiating)
     }
 
     /// Returns true if this state indicates a successful outcome.
@@ -270,6 +300,7 @@ impl fmt::Display for RfqState {
             Self::Failed => "FAILED",
             Self::Cancelled => "CANCELLED",
             Self::Expired => "EXPIRED",
+            Self::Negotiating => "NEGOTIATING",
         };
         write!(f, "{}", s)
     }
@@ -289,6 +320,7 @@ impl TryFrom<u8> for RfqState {
             6 => Ok(Self::Failed),
             7 => Ok(Self::Cancelled),
             8 => Ok(Self::Expired),
+            9 => Ok(Self::Negotiating),
             _ => Err(InvalidRfqStateError(value)),
         }
     }
@@ -341,6 +373,7 @@ mod tests {
             assert!(!RfqState::QuotesReceived.is_terminal());
             assert!(!RfqState::ClientSelecting.is_terminal());
             assert!(!RfqState::Executing.is_terminal());
+            assert!(!RfqState::Negotiating.is_terminal());
         }
     }
 
@@ -372,10 +405,22 @@ mod tests {
         fn quotes_received_transitions() {
             let state = RfqState::QuotesReceived;
             assert!(state.can_transition_to(RfqState::ClientSelecting));
+            assert!(state.can_transition_to(RfqState::Negotiating));
             assert!(state.can_transition_to(RfqState::Failed));
             assert!(state.can_transition_to(RfqState::Cancelled));
             assert!(state.can_transition_to(RfqState::Expired));
             assert!(!state.can_transition_to(RfqState::Created));
+        }
+
+        #[test]
+        fn negotiating_transitions() {
+            let state = RfqState::Negotiating;
+            assert!(state.can_transition_to(RfqState::ClientSelecting));
+            assert!(state.can_transition_to(RfqState::Failed));
+            assert!(state.can_transition_to(RfqState::Cancelled));
+            assert!(state.can_transition_to(RfqState::Expired));
+            assert!(!state.can_transition_to(RfqState::Created));
+            assert!(!state.can_transition_to(RfqState::QuotesReceived));
         }
 
         #[test]
@@ -416,6 +461,7 @@ mod tests {
                     RfqState::Failed,
                     RfqState::Cancelled,
                     RfqState::Expired,
+                    RfqState::Negotiating,
                 ] {
                     assert!(
                         !terminal.can_transition_to(target),
@@ -471,9 +517,17 @@ mod tests {
             assert!(!RfqState::Created.has_quotes());
             assert!(!RfqState::QuoteRequesting.has_quotes());
             assert!(RfqState::QuotesReceived.has_quotes());
+            assert!(RfqState::Negotiating.has_quotes());
             assert!(RfqState::ClientSelecting.has_quotes());
             assert!(RfqState::Executing.has_quotes());
             assert!(RfqState::Executed.has_quotes());
+        }
+
+        #[test]
+        fn is_negotiating() {
+            assert!(RfqState::Negotiating.is_negotiating());
+            assert!(!RfqState::Created.is_negotiating());
+            assert!(!RfqState::QuotesReceived.is_negotiating());
         }
 
         #[test]
@@ -501,6 +555,7 @@ mod tests {
             assert_eq!(RfqState::Created.as_u8(), 0);
             assert_eq!(RfqState::QuoteRequesting.as_u8(), 1);
             assert_eq!(RfqState::Expired.as_u8(), 8);
+            assert_eq!(RfqState::Negotiating.as_u8(), 9);
         }
 
         #[test]
@@ -508,17 +563,18 @@ mod tests {
             assert_eq!(RfqState::try_from(0).unwrap(), RfqState::Created);
             assert_eq!(RfqState::try_from(5).unwrap(), RfqState::Executed);
             assert_eq!(RfqState::try_from(8).unwrap(), RfqState::Expired);
+            assert_eq!(RfqState::try_from(9).unwrap(), RfqState::Negotiating);
         }
 
         #[test]
         fn try_from_u8_invalid() {
-            assert!(RfqState::try_from(9).is_err());
+            assert!(RfqState::try_from(10).is_err());
             assert!(RfqState::try_from(255).is_err());
         }
 
         #[test]
         fn roundtrip_u8() {
-            for i in 0..=8 {
+            for i in 0..=9 {
                 let state = RfqState::try_from(i).unwrap();
                 assert_eq!(state.as_u8(), i);
             }
@@ -539,6 +595,7 @@ mod tests {
             assert_eq!(RfqState::Failed.to_string(), "FAILED");
             assert_eq!(RfqState::Cancelled.to_string(), "CANCELLED");
             assert_eq!(RfqState::Expired.to_string(), "EXPIRED");
+            assert_eq!(RfqState::Negotiating.to_string(), "NEGOTIATING");
         }
     }
 
@@ -557,6 +614,7 @@ mod tests {
                 RfqState::Failed,
                 RfqState::Cancelled,
                 RfqState::Expired,
+                RfqState::Negotiating,
             ] {
                 let json = serde_json::to_string(&state).unwrap();
                 let deserialized: RfqState = serde_json::from_str(&json).unwrap();

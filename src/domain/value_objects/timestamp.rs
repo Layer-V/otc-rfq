@@ -40,10 +40,10 @@ use std::ops::{Add, Sub};
 /// let now = Timestamp::now();
 ///
 /// // Add time
-/// let in_one_minute = now.add_secs(60);
+/// let future = now.add_secs(60);
 ///
-/// // Check expiration
-/// assert!(!now.is_expired());
+/// // Check expiration (future timestamp should not be expired)
+/// assert!(!future.is_expired());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -60,8 +60,8 @@ impl Timestamp {
     /// ```
     /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
     ///
-    /// let now = Timestamp::now();
-    /// assert!(!now.is_expired());
+    /// let future = Timestamp::now().add_secs(60);
+    /// assert!(!future.is_expired());
     /// ```
     #[must_use]
     pub fn now() -> Self {
@@ -302,11 +302,11 @@ impl Timestamp {
     ///
     /// let ts = Timestamp::from_secs(1704067200).unwrap();
     /// let iso = ts.to_iso8601();
-    /// assert!(iso.ends_with("Z"));
+    /// assert!(iso.contains("2024-01-01"));
     /// ```
     #[must_use]
     pub fn to_iso8601(&self) -> String {
-        self.0.to_rfc3339()
+        self.0.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     }
 
     /// Returns the underlying DateTime.
