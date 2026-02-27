@@ -40,10 +40,10 @@ use std::ops::{Add, Sub};
 /// let now = Timestamp::now();
 ///
 /// // Add time
-/// let in_one_minute = now.add_secs(60);
+/// let future = now.add_secs(60);
 ///
-/// // A future timestamp is not expired
-/// assert!(!in_one_minute.is_expired());
+/// // Check expiration (future timestamp should not be expired)
+/// assert!(!future.is_expired());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -306,7 +306,7 @@ impl Timestamp {
     /// ```
     #[must_use]
     pub fn to_iso8601(&self) -> String {
-        self.0.to_rfc3339()
+        self.0.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
     }
 
     /// Returns the underlying DateTime.

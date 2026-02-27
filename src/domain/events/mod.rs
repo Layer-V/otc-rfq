@@ -28,12 +28,16 @@
 //! - [`ComplianceCheckPassed`]: Compliance check passed
 //! - [`ComplianceCheckFailed`]: Compliance check failed
 
+pub mod allocation_events;
 pub mod compliance_events;
 pub mod domain_event;
 pub mod negotiation_events;
 pub mod rfq_events;
 pub mod trade_events;
 
+pub use allocation_events::{
+    AllocationEvent, AllocationExecuted, AllocationRolledBack, MultiMmFillAllocated,
+};
 pub use compliance_events::{
     ComplianceCheckFailed, ComplianceCheckPassed, ComplianceCheckType, ComplianceEvent,
 };

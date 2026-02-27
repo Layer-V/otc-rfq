@@ -61,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
     let rfq_repository = create_rfq_repository();
     let venue_repository = create_venue_repository();
     let trade_repository = create_trade_repository();
+    let mm_performance_tracker = create_mm_performance_tracker();
 
     // Start servers
     let grpc_handle = start_grpc_server(&config, Arc::clone(&rfq_repository), shutdown_rx.clone());
@@ -69,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(&rfq_repository),
         Arc::clone(&venue_repository),
         Arc::clone(&trade_repository),
+        Some(Arc::clone(&mm_performance_tracker)),
         shutdown_rx.clone(),
     );
 
@@ -142,6 +144,18 @@ fn create_trade_repository() -> Arc<dyn otc_rfq::api::rest::handlers::TradeRepos
     Arc::new(InMemoryTradeRepository::new())
 }
 
+/// Creates the MM performance tracker with in-memory storage.
+fn create_mm_performance_tracker()
+-> Arc<otc_rfq::domain::services::mm_performance::MmPerformanceTracker> {
+    use otc_rfq::domain::services::mm_performance::{
+        MmPerformanceRepository, MmPerformanceTracker,
+    };
+    use otc_rfq::infrastructure::persistence::in_memory::InMemoryMmPerformanceRepository;
+
+    let repo: Arc<dyn MmPerformanceRepository> = Arc::new(InMemoryMmPerformanceRepository::new());
+    Arc::new(MmPerformanceTracker::with_defaults(repo))
+}
+
 /// Starts the gRPC server.
 fn start_grpc_server(
     config: &AppConfig,
@@ -185,6 +199,9 @@ fn start_rest_server(
     rfq_repository: Arc<dyn otc_rfq::application::use_cases::create_rfq::RfqRepository>,
     venue_repository: Arc<dyn otc_rfq::api::rest::handlers::VenueRepository>,
     trade_repository: Arc<dyn otc_rfq::api::rest::handlers::TradeRepository>,
+    mm_performance_tracker: Option<
+        Arc<otc_rfq::domain::services::mm_performance::MmPerformanceTracker>,
+    >,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> tokio::task::JoinHandle<()> {
     let addr = match config.rest.socket_addr() {
@@ -203,6 +220,7 @@ fn start_rest_server(
             rfq_repository,
             venue_repository,
             trade_repository,
+            mm_performance_tracker,
         });
 
         let router = create_router(state);
