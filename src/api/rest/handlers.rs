@@ -804,7 +804,7 @@ pub async fn list_mm_performance(
         .filter(|m| {
             filter
                 .min_response_rate
-                .is_none_or(|min| m.is_eligible(min))
+                .is_none_or(|min| m.response_rate_pct().is_some_and(|rate| rate >= min))
         })
         .map(MmPerformanceResponse::from)
         .collect();
@@ -839,6 +839,10 @@ pub async fn get_mm_performance(
         error!("Failed to get MM metrics for {}: {}", mm_id, e);
         internal_error(&e.to_string())
     })?;
+
+    if !metrics.has_data() {
+        return Err(not_found("market maker", &mm_id));
+    }
 
     Ok(Json(MmPerformanceResponse::from(&metrics)))
 }

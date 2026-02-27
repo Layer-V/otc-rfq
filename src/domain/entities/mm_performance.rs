@@ -445,6 +445,19 @@ impl MmPerformanceMetrics {
         self.window_end
     }
 
+    /// Returns `true` if this MM has any recorded events in the window.
+    ///
+    /// A market maker with no events is considered to have no data.
+    #[inline]
+    #[must_use]
+    pub fn has_data(&self) -> bool {
+        self.total_rfqs_received > 0
+            || self.total_quotes_provided > 0
+            || self.total_trades_executed > 0
+            || self.total_accepts_requested > 0
+            || self.total_last_look_rejects > 0
+    }
+
     /// Returns true if this MM meets the minimum response rate for eligibility.
     ///
     /// # Arguments
@@ -803,6 +816,33 @@ mod tests {
             let metrics = MmPerformanceMetrics::compute(&custom_id, &[], window_start(), now());
 
             assert_eq!(metrics.mm_id(), &custom_id);
+        }
+    }
+
+    mod has_data {
+        use super::*;
+
+        #[test]
+        fn no_events_has_no_data() {
+            let metrics = MmPerformanceMetrics::compute(&mm_id(), &[], window_start(), now());
+            assert!(!metrics.has_data());
+        }
+
+        #[test]
+        fn rfq_event_has_data() {
+            let events = vec![make_event(MmPerformanceEventKind::RfqSent)];
+            let metrics = MmPerformanceMetrics::compute(&mm_id(), &events, window_start(), now());
+            assert!(metrics.has_data());
+        }
+
+        #[test]
+        fn quote_event_has_data() {
+            let events = vec![make_event(MmPerformanceEventKind::QuoteReceived {
+                response_time_ms: 100,
+                rank: 1,
+            })];
+            let metrics = MmPerformanceMetrics::compute(&mm_id(), &events, window_start(), now());
+            assert!(metrics.has_data());
         }
     }
 
