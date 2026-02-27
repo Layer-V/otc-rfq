@@ -21,13 +21,16 @@
 //! ```
 //! use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 //! use otc_rfq::domain::value_objects::{
-//!     CounterpartyId, Instrument, OrderSide, Quantity,
+//!     CounterpartyId, Instrument, OrderSide, Quantity, Symbol,
 //! };
+//! use otc_rfq::domain::value_objects::enums::AssetClass;
 //! use otc_rfq::domain::value_objects::timestamp::Timestamp;
 //!
+//! let symbol = Symbol::new("BTC/USD").unwrap();
+//! let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 //! let rfq = RfqBuilder::new(
 //!     CounterpartyId::new("client-1"),
-//!     Instrument::builder("BTC", "USD").build().unwrap(),
+//!     instrument,
 //!     OrderSide::Buy,
 //!     Quantity::new(1.0).unwrap(),
 //!     Timestamp::now().add_secs(300),
@@ -97,13 +100,16 @@ impl ComplianceResult {
 /// ```
 /// use otc_rfq::domain::entities::rfq::{Rfq, RfqBuilder};
 /// use otc_rfq::domain::value_objects::{
-///     CounterpartyId, Instrument, OrderSide, Quantity, RfqState,
+///     CounterpartyId, Instrument, OrderSide, Quantity, RfqState, Symbol,
 /// };
+/// use otc_rfq::domain::value_objects::enums::AssetClass;
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
+/// let symbol = Symbol::new("BTC/USD").unwrap();
+/// let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 /// let mut rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     instrument,
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),
@@ -627,13 +633,16 @@ impl fmt::Display for Rfq {
 /// ```
 /// use otc_rfq::domain::entities::rfq::RfqBuilder;
 /// use otc_rfq::domain::value_objects::{
-///     CounterpartyId, Instrument, OrderSide, Quantity,
+///     CounterpartyId, Instrument, OrderSide, Quantity, Symbol,
 /// };
+/// use otc_rfq::domain::value_objects::enums::AssetClass;
 /// use otc_rfq::domain::value_objects::timestamp::Timestamp;
 ///
+/// let symbol = Symbol::new("BTC/USD").unwrap();
+/// let instrument = Instrument::builder(symbol, AssetClass::CryptoSpot).build();
 /// let rfq = RfqBuilder::new(
 ///     CounterpartyId::new("client-1"),
-///     Instrument::builder("BTC", "USD").build().unwrap(),
+///     instrument,
 ///     OrderSide::Buy,
 ///     Quantity::new(1.0).unwrap(),
 ///     Timestamp::now().add_secs(300),

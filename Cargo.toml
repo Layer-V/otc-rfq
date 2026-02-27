@@ -98,8 +98,8 @@ criterion = { workspace = true }
 serde_json = { workspace = true }
 
 [workspace.dependencies]
-toml = "0.9"
-rand = "0.9"
+toml = "1.0"
+rand = "0.10"
 tonic-prost = "0.14"
 tokio-stream = "0.1"
 # Async runtime
@@ -132,7 +132,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Types
-uuid = { version = "1.20", features = ["v4", "serde"] }
+uuid = { version = "1.21", features = ["v4", "serde"] }
 rust_decimal = { version = "1.40", features = ["serde", "serde-with-str"] }
 chrono = { version = "0.4", features = ["serde"] }
 
@@ -165,7 +165,7 @@ prost-build = "0.14"
 tokio-test = "0.4"
 wiremock = "0.6"
 proptest = "1.9"
-testcontainers = "0.26"
+testcontainers = "0.27"
 criterion = { version = "0.8", features = ["async_tokio"] }
 
 # IronFix for FIX protocol
