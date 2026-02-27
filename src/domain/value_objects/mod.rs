@@ -53,6 +53,7 @@ pub mod quantity;
 pub mod reference_price;
 pub mod rfq_state;
 pub mod size_negotiation_mode;
+pub mod strategy;
 pub mod symbol;
 pub mod timestamp;
 
@@ -71,5 +72,6 @@ pub use quantity::Quantity;
 pub use reference_price::{PriceBoundsConfig, PriceBoundsResult, ReferencePriceSource};
 pub use rfq_state::{InvalidRfqStateError, RfqState};
 pub use size_negotiation_mode::SizeNegotiationMode;
+pub use strategy::{Strategy, StrategyBuilder, StrategyLeg, StrategyType};
 pub use symbol::{Symbol, SymbolError};
 pub use timestamp::Timestamp;
