@@ -12,9 +12,11 @@
 //!
 //! - [`Quote`]: Price quote from a venue
 //! - `Counterparty`: Client or market maker
+//! - `MmPerformanceMetrics`: Market maker performance tracking
 
 pub mod counter_quote;
 pub mod counterparty;
+pub mod mm_performance;
 pub mod negotiation;
 pub mod quote;
 pub mod rfq;
@@ -29,7 +31,11 @@ pub use counterparty::{
     Counterparty, CounterpartyLimits, CounterpartyType, InvalidCounterpartyTypeError,
     InvalidKycStatusError, KycStatus, WalletAddress,
 };
-pub use negotiation::{Negotiation, NegotiationRound, DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS};
+pub use mm_performance::{
+    DEFAULT_MIN_RESPONSE_RATE_PCT, DEFAULT_WINDOW_DAYS, MmPerformanceEvent, MmPerformanceEventKind,
+    MmPerformanceMetrics,
+};
+pub use negotiation::{DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS, Negotiation, NegotiationRound};
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
 pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
 pub use trade::{InvalidSettlementStateError, SettlementState, Trade};

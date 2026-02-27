@@ -262,9 +262,9 @@ impl Negotiation {
             ));
         }
         if max_rounds > MAX_ALLOWED_ROUNDS {
-            return Err(DomainError::ValidationError(
-                format!("max_rounds must be <= {MAX_ALLOWED_ROUNDS}"),
-            ));
+            return Err(DomainError::ValidationError(format!(
+                "max_rounds must be <= {MAX_ALLOWED_ROUNDS}"
+            )));
         }
         let now = Timestamp::now();
         Ok(Self {
@@ -658,9 +658,8 @@ mod tests {
             let rfq_id = test_rfq_id();
             let requester = test_requester();
             let mm = test_mm();
-            let neg =
-                Negotiation::new(rfq_id, requester.clone(), mm.clone(), OrderSide::Sell, 5)
-                    .unwrap();
+            let neg = Negotiation::new(rfq_id, requester.clone(), mm.clone(), OrderSide::Sell, 5)
+                .unwrap();
 
             assert_eq!(neg.rfq_id(), rfq_id);
             assert_eq!(neg.requester(), &requester);
@@ -671,8 +670,13 @@ mod tests {
 
         #[test]
         fn new_fails_with_zero_max_rounds() {
-            let result =
-                Negotiation::new(test_rfq_id(), test_requester(), test_mm(), OrderSide::Buy, 0);
+            let result = Negotiation::new(
+                test_rfq_id(),
+                test_requester(),
+                test_mm(),
+                OrderSide::Buy,
+                0,
+            );
             assert!(matches!(result, Err(DomainError::ValidationError(_))));
         }
 
