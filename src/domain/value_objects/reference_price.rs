@@ -117,6 +117,8 @@ impl PriceBoundsConfig {
     /// # Errors
     ///
     /// Returns `None` if any tolerance is negative.
+    /// A zero tolerance is valid and means exact price match is required
+    /// (useful for fixed-price or pegged instruments).
     ///
     /// # Examples
     ///
