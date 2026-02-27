@@ -151,7 +151,15 @@ fn enforce_mode(
             }
             Ok(fillable)
         }
-        SizeNegotiationMode::BestEffort => Ok(target_qty.min(available_qty)),
+        SizeNegotiationMode::BestEffort => {
+            if available_qty.is_zero() {
+                return Err(DomainError::InsufficientLiquidity {
+                    available: available_qty,
+                    requested: target_qty,
+                });
+            }
+            Ok(target_qty.min(available_qty))
+        }
     }
 }
 
@@ -242,19 +250,31 @@ impl MultiMmFillStrategy for ProRataStrategy {
         let effective_qty = enforce_mode(mode, target_qty, available)?;
 
         // Compute total quoted quantity for ratio calculation
-        let total_f64 = available.get().to_f64().unwrap_or(0.0);
+        let total_f64 = available.get().to_f64().ok_or_else(|| {
+            DomainError::InvalidArithmeticValue(
+                "total quoted quantity cannot be converted to f64".to_string(),
+            )
+        })?;
         if total_f64 == 0.0 {
             return Err(DomainError::InvalidQuantity(
                 "total quoted quantity is zero".to_string(),
             ));
         }
 
-        let effective_f64 = effective_qty.get().to_f64().unwrap_or(0.0);
+        let effective_f64 = effective_qty.get().to_f64().ok_or_else(|| {
+            DomainError::InvalidArithmeticValue(
+                "effective quantity cannot be converted to f64".to_string(),
+            )
+        })?;
         let mut allocations = Vec::with_capacity(quotes.len());
         let mut allocated_so_far = Quantity::zero();
 
         for (i, rq) in quotes.iter().enumerate() {
-            let quote_qty_f64 = rq.quote.quantity().get().to_f64().unwrap_or(0.0);
+            let quote_qty_f64 = rq.quote.quantity().get().to_f64().ok_or_else(|| {
+                DomainError::InvalidArithmeticValue(
+                    "quote quantity cannot be converted to f64".to_string(),
+                )
+            })?;
             let ratio = quote_qty_f64 / total_f64;
 
             let is_last = i == quotes.len().saturating_sub(1);
@@ -796,6 +816,20 @@ mod tests {
 
             assert_eq!(allocs.len(), 1);
             assert_eq!(allocs[0].allocated_quantity(), Quantity::new(5.0).unwrap());
+        }
+
+        #[test]
+        fn best_effort_zero_available_returns_error() {
+            let result = enforce_mode(
+                &SizeNegotiationMode::BestEffort,
+                Quantity::new(5.0).unwrap(),
+                Quantity::zero(),
+            );
+
+            assert!(matches!(
+                result,
+                Err(DomainError::InsufficientLiquidity { .. })
+            ));
         }
     }
 }
