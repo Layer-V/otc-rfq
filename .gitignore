@@ -36,6 +36,10 @@ target/
 # Windsurf workflow files (never commit)
 .windsurf/
 
+# Internal documentation (never commit)
+.internalDoc/
+/.windsurfrules
+
 # Coverage reports
 /coverage/
 /cobertura.xml
