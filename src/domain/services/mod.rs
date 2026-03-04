@@ -11,4 +11,4 @@
 pub mod block_trade;
 pub mod mm_performance;
 
-pub use block_trade::{BlockTradeConfig, ReportingTier, TierMultipliers};
+pub use block_trade::{BlockTradeConfig, ReportingTier, TierMultiplierError, TierMultipliers};

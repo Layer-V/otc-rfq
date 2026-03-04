@@ -16,7 +16,6 @@
 use std::collections::HashMap;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::value_objects::{Instrument, Quantity};
@@ -59,9 +58,16 @@ pub struct BlockTradeConfig {
 /// Multipliers for determining reporting tier boundaries.
 ///
 /// Tiers are determined by comparing trade size to the base threshold:
-/// - Standard: 1x to `large` multiplier
-/// - Large: `large` to `very_large` multiplier
-/// - VeryLarge: `very_large` and above
+/// - Standard: ≥ 1x and < `large` multiplier
+/// - Large: ≥ `large` and < `very_large` multiplier
+/// - VeryLarge: ≥ `very_large` multiplier
+///
+/// # Invariants
+///
+/// - Both multipliers must be finite (not NaN or ±infinity)
+/// - Both multipliers must be positive
+/// - `large` must be ≥ 1.0
+/// - `very_large` must be > `large`
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct TierMultipliers {
     /// Multiplier for Large tier threshold (default: 5.0).
@@ -75,6 +81,19 @@ pub struct TierMultipliers {
     /// A trade is considered VeryLarge if its size is at least this multiple
     /// of the base threshold.
     pub very_large: f64,
+}
+
+/// Error type for invalid tier multipliers.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TierMultiplierError {
+    /// Multiplier is not a finite number (NaN or infinity).
+    NotFinite,
+    /// Multiplier is not positive.
+    NotPositive,
+    /// Large multiplier is less than 1.0.
+    LargeTooSmall,
+    /// VeryLarge multiplier is not greater than Large.
+    InvalidOrdering,
 }
 
 /// Reporting tier for block trades based on size.
@@ -167,9 +186,9 @@ impl BlockTradeConfig {
     ///
     /// The tier is based on how many times larger the trade is compared to
     /// the base threshold:
-    /// - Standard: 1x to 5x threshold
-    /// - Large: 5x to 10x threshold
-    /// - VeryLarge: 10x threshold and above
+    /// - Standard: ≥ 1x and < 5x threshold
+    /// - Large: ≥ 5x and < 10x threshold
+    /// - VeryLarge: ≥ 10x threshold
     ///
     /// # Arguments
     ///
@@ -211,16 +230,20 @@ impl BlockTradeConfig {
     ) -> Option<ReportingTier> {
         let threshold = self.get_threshold(instrument)?;
 
-        if !self.qualifies(instrument, quantity) {
+        // Check qualification using already-fetched threshold
+        if quantity < threshold {
             return None;
         }
 
-        let ratio =
-            quantity.get().to_f64().unwrap_or(0.0) / threshold.get().to_f64().unwrap_or(1.0);
+        // Calculate ratio in Decimal to avoid floating-point precision issues
+        let large_threshold =
+            threshold.get() * Decimal::try_from(self.tier_multipliers.large).ok()?;
+        let very_large_threshold =
+            threshold.get() * Decimal::try_from(self.tier_multipliers.very_large).ok()?;
 
-        if ratio >= self.tier_multipliers.very_large {
+        if quantity.get() >= very_large_threshold {
             Some(ReportingTier::VeryLarge)
-        } else if ratio >= self.tier_multipliers.large {
+        } else if quantity.get() >= large_threshold {
             Some(ReportingTier::Large)
         } else {
             Some(ReportingTier::Standard)
@@ -232,14 +255,34 @@ impl Default for BlockTradeConfig {
     fn default() -> Self {
         let mut thresholds = HashMap::new();
 
-        // SAFETY: These are valid positive decimal values that will never fail
         // BTC threshold: 25.0
-        if let Ok(btc_threshold) = Quantity::from_decimal(Decimal::new(25, 0)) {
-            thresholds.insert("BTC".to_string(), btc_threshold);
+        // These conversions should always succeed for valid positive decimals.
+        // If they fail, we log the error and skip that threshold.
+        match Quantity::from_decimal(Decimal::new(25, 0)) {
+            Ok(btc_threshold) => {
+                thresholds.insert("BTC".to_string(), btc_threshold);
+            }
+            Err(e) => {
+                // This should never happen with valid positive decimals
+                tracing::error!(
+                    "Failed to create BTC threshold in BlockTradeConfig::default: {}",
+                    e
+                );
+            }
         }
+
         // ETH threshold: 250.0
-        if let Ok(eth_threshold) = Quantity::from_decimal(Decimal::new(250, 0)) {
-            thresholds.insert("ETH".to_string(), eth_threshold);
+        match Quantity::from_decimal(Decimal::new(250, 0)) {
+            Ok(eth_threshold) => {
+                thresholds.insert("ETH".to_string(), eth_threshold);
+            }
+            Err(e) => {
+                // This should never happen with valid positive decimals
+                tracing::error!(
+                    "Failed to create ETH threshold in BlockTradeConfig::default: {}",
+                    e
+                );
+            }
         }
 
         Self {
@@ -247,6 +290,38 @@ impl Default for BlockTradeConfig {
             default_threshold: None,
             tier_multipliers: TierMultipliers::default(),
         }
+    }
+}
+
+impl TierMultipliers {
+    /// Creates new tier multipliers with validation.
+    ///
+    /// # Arguments
+    ///
+    /// * `large` - Multiplier for Large tier (must be ≥ 1.0 and finite)
+    /// * `very_large` - Multiplier for VeryLarge tier (must be > `large` and finite)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Either multiplier is not finite (NaN or ±infinity)
+    /// - Either multiplier is not positive
+    /// - `large` is less than 1.0
+    /// - `very_large` is not greater than `large`
+    pub fn new(large: f64, very_large: f64) -> Result<Self, TierMultiplierError> {
+        if !large.is_finite() || !very_large.is_finite() {
+            return Err(TierMultiplierError::NotFinite);
+        }
+        if large <= 0.0 || very_large <= 0.0 {
+            return Err(TierMultiplierError::NotPositive);
+        }
+        if large < 1.0 {
+            return Err(TierMultiplierError::LargeTooSmall);
+        }
+        if very_large <= large {
+            return Err(TierMultiplierError::InvalidOrdering);
+        }
+        Ok(Self { large, very_large })
     }
 }
 
