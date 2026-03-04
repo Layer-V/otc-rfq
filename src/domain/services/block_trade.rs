@@ -74,13 +74,13 @@ pub struct TierMultipliers {
     ///
     /// A trade is considered Large if its size is at least this multiple
     /// of the base threshold.
-    pub large: f64,
+    large: f64,
 
     /// Multiplier for VeryLarge tier threshold (default: 10.0).
     ///
     /// A trade is considered VeryLarge if its size is at least this multiple
     /// of the base threshold.
-    pub very_large: f64,
+    very_large: f64,
 }
 
 /// Error type for invalid tier multipliers.
@@ -236,10 +236,12 @@ impl BlockTradeConfig {
         }
 
         // Calculate ratio in Decimal to avoid floating-point precision issues
-        let large_threshold =
-            threshold.get() * Decimal::try_from(self.tier_multipliers.large).ok()?;
-        let very_large_threshold =
-            threshold.get() * Decimal::try_from(self.tier_multipliers.very_large).ok()?;
+        let large_threshold = threshold
+            .get()
+            .checked_mul(Decimal::try_from(self.tier_multipliers.large()).ok()?)?;
+        let very_large_threshold = threshold
+            .get()
+            .checked_mul(Decimal::try_from(self.tier_multipliers.very_large()).ok()?)?;
 
         if quantity.get() >= very_large_threshold {
             Some(ReportingTier::VeryLarge)
@@ -322,6 +324,20 @@ impl TierMultipliers {
             return Err(TierMultiplierError::InvalidOrdering);
         }
         Ok(Self { large, very_large })
+    }
+
+    /// Returns the Large tier multiplier.
+    #[inline]
+    #[must_use]
+    pub const fn large(&self) -> f64 {
+        self.large
+    }
+
+    /// Returns the VeryLarge tier multiplier.
+    #[inline]
+    #[must_use]
+    pub const fn very_large(&self) -> f64 {
+        self.very_large
     }
 }
 
@@ -557,9 +573,10 @@ mod tests {
 
     #[test]
     fn custom_tier_multipliers_work() {
-        let mut config = BlockTradeConfig::default();
-        config.tier_multipliers.large = 2.0;
-        config.tier_multipliers.very_large = 4.0;
+        let config = BlockTradeConfig {
+            tier_multipliers: TierMultipliers::new(2.0, 4.0).unwrap(),
+            ..Default::default()
+        };
 
         let instrument = create_btc_instrument();
 
