@@ -15,8 +15,8 @@
 
 use std::collections::HashMap;
 
-use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::value_objects::{Instrument, Quantity};
@@ -231,7 +231,7 @@ impl BlockTradeConfig {
 impl Default for BlockTradeConfig {
     fn default() -> Self {
         let mut thresholds = HashMap::new();
-        
+
         // SAFETY: These are valid positive decimal values that will never fail
         // BTC threshold: 25.0
         if let Ok(btc_threshold) = Quantity::from_decimal(Decimal::new(25, 0)) {
