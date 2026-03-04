@@ -300,11 +300,11 @@ impl RfqRow {
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
         let side: OrderSide = serde_json::from_str(&format!("\"{}\"", self.side))
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
-        let quantity = Quantity::new(self.quantity.to_string().parse().unwrap_or(0.0))
+        let quantity = Quantity::from_decimal(self.quantity)
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
         let min_quantity = self
             .min_quantity
-            .map(|d| Quantity::new(d.to_string().parse().unwrap_or(0.0)))
+            .map(Quantity::from_decimal)
             .transpose()
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
         let state: RfqState = serde_json::from_str(&format!("\"{}\"", self.state))
