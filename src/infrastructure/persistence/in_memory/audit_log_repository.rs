@@ -69,6 +69,10 @@ impl InMemoryNegotiationAuditLog {
     }
 
     /// Clears all entries from the log.
+    ///
+    /// This method is only available in test builds to maintain the append-only
+    /// contract specified by the [`NegotiationAuditLog`] trait.
+    #[cfg(test)]
     pub fn clear(&self) {
         if let Ok(mut entries) = self.entries.lock() {
             entries.clear();
