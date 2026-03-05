@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::domain::value_objects::{Instrument, Quantity};
 
@@ -38,7 +38,7 @@ use crate::domain::value_objects::{Instrument, Quantity};
 ///
 /// assert!(config.qualifies(&instrument, quantity));
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BlockTradeConfig {
     /// Per-instrument minimum sizes for block trade qualification.
     ///
@@ -68,7 +68,7 @@ pub struct BlockTradeConfig {
 /// - Both multipliers must be positive
 /// - `large` must be ≥ 1.0
 /// - `very_large` must be > `large`
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct TierMultipliers {
     /// Multiplier for Large tier threshold (default: 5.0).
     ///
@@ -347,6 +347,47 @@ impl Default for TierMultipliers {
             large: 5.0,
             very_large: 10.0,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for TierMultipliers {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct TierMultipliersHelper {
+            large: f64,
+            very_large: f64,
+        }
+
+        let helper = TierMultipliersHelper::deserialize(deserializer)?;
+        Self::new(helper.large, helper.very_large)
+            .map_err(|e| de::Error::custom(format!("Invalid tier multipliers: {:?}", e)))
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockTradeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct BlockTradeConfigHelper {
+            thresholds: HashMap<String, Quantity>,
+            default_threshold: Option<Quantity>,
+            tier_multipliers: TierMultipliers,
+        }
+
+        let helper = BlockTradeConfigHelper::deserialize(deserializer)?;
+
+        // Validate that all thresholds are positive (Quantity already enforces this)
+        // The TierMultipliers validation happens in its own Deserialize impl
+        Ok(Self {
+            thresholds: helper.thresholds,
+            default_threshold: helper.default_threshold,
+            tier_multipliers: helper.tier_multipliers,
+        })
     }
 }
 
