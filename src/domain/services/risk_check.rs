@@ -178,16 +178,18 @@ impl RiskResult {
 
     /// Converts a failed result to a DomainError.
     ///
-    /// # Panics
-    ///
-    /// Panics if called on a passing result.
+    /// Returns `None` if the risk check passed, `Some(error)` if it failed.
     #[must_use]
-    pub fn to_error(&self) -> DomainError {
-        DomainError::RiskCheckFailed(
-            self.failure_reason
-                .clone()
-                .unwrap_or_else(|| "Unknown risk check failure".to_string()),
-        )
+    pub fn to_error(&self) -> Option<DomainError> {
+        if self.passed {
+            None
+        } else {
+            Some(DomainError::RiskCheckFailed(
+                self.failure_reason
+                    .clone()
+                    .unwrap_or_else(|| "Unknown risk check failure".to_string()),
+            ))
+        }
     }
 }
 
@@ -369,10 +371,15 @@ mod tests {
     fn risk_result_to_error() {
         let rfq_id = test_rfq_id();
         let quote_id = test_quote_id();
-        let result = RiskResult::failed(rfq_id, quote_id, "Position limit exceeded");
+        let failed_result = RiskResult::failed(rfq_id, quote_id, "Position limit exceeded");
+        let passed_result = RiskResult::passed(rfq_id, quote_id);
 
-        let error = result.to_error();
-        assert!(matches!(error, DomainError::RiskCheckFailed(_)));
+        // Failed result returns Some(error)
+        let error = failed_result.to_error();
+        assert!(matches!(error, Some(DomainError::RiskCheckFailed(_))));
+
+        // Passed result returns None
+        assert!(passed_result.to_error().is_none());
     }
 
     #[test]

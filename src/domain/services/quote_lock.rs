@@ -97,6 +97,24 @@ impl QuoteLock {
         }
     }
 
+    /// Creates a new quote lock with explicit expiry time.
+    ///
+    /// Used when extending a lock to preserve the original `locked_at` timestamp.
+    #[must_use]
+    pub fn new_with_expiry(
+        quote_id: QuoteId,
+        holder_id: LockHolderId,
+        locked_at: Timestamp,
+        expires_at: Timestamp,
+    ) -> Self {
+        Self {
+            quote_id,
+            holder_id,
+            locked_at,
+            expires_at,
+        }
+    }
+
     /// Returns the locked quote ID.
     #[must_use]
     pub fn quote_id(&self) -> QuoteId {

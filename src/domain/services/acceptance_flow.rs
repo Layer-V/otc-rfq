@@ -262,8 +262,8 @@ impl AcceptanceFlow {
             ));
         }
         let risk_result = self.risk_service.check(rfq, quote).await;
-        if !risk_result.is_passed() {
-            return Err(risk_result.to_error());
+        if let Some(err) = risk_result.to_error() {
+            return Err(err);
         }
 
         // Step 3: Last-look
@@ -307,10 +307,12 @@ impl AcceptanceFlow {
         }
 
         let remaining = self.config.remaining_time(start);
+        // Clamp to default_timeout to ensure last-look never exceeds 200ms (unless configured otherwise)
+        let requested_timeout = remaining.min(self.config.last_look_config.default_timeout);
         let timeout = self
             .config
             .last_look_config
-            .effective_timeout(Some(remaining));
+            .effective_timeout(Some(requested_timeout));
         let result = self.last_look_service.request(quote, timeout).await;
         self.last_look_service
             .record_result(quote.venue_id(), &result)

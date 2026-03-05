@@ -2,7 +2,8 @@
 //!
 //! In-memory implementation of [`QuoteLockService`] for single-instance deployments.
 //!
-//! This implementation uses `Arc<Mutex<HashMap>>` for thread-safe access.
+//! This implementation stores its state in a `Mutex<HashMap<...>>` for thread-safe access.
+//! Callers can wrap an instance in `Arc<InMemoryQuoteLockRepository>` when shared ownership is required.
 //! It is suitable for development, testing, and single-instance production deployments.
 //!
 //! For distributed deployments, use a Redis-based implementation instead.
@@ -155,12 +156,21 @@ impl QuoteLockService for InMemoryQuoteLockRepository {
                 ));
             }
 
-            // Create new lock with extended TTL
-            let new_lock = QuoteLock::new(
+            // Extend by adding additional_ttl to the existing expiry (or now if already past)
+            let base_time = if existing.expires_at() > Timestamp::now() {
+                existing.expires_at()
+            } else {
+                Timestamp::now()
+            };
+            let additional_ms = additional_ttl.as_millis().min(i64::MAX as u128) as i64;
+            let new_expires_at = base_time.add_millis(additional_ms);
+
+            // Create new lock preserving original locked_at but with extended expiry
+            let new_lock = QuoteLock::new_with_expiry(
                 lock.quote_id(),
                 lock.holder_id(),
-                Timestamp::now(),
-                additional_ttl,
+                existing.locked_at(),
+                new_expires_at,
             );
             locks.insert(lock.quote_id(), new_lock.clone());
 

@@ -50,8 +50,7 @@ pub mod trade_events;
 
 pub use acceptance_events::{
     AcceptanceCompleted, AcceptanceEvent, AcceptanceFailed, LastLookConfirmed, LastLookRejected,
-    LastLookSent, LastLookTimeout, QuoteLocked, RiskCheckFailed as AcceptanceRiskCheckFailed,
-    RiskCheckPassed,
+    LastLookSent, LastLookTimeout, QuoteLocked, RiskCheckFailed, RiskCheckPassed,
 };
 pub use allocation_events::{
     AllocationEvent, AllocationExecuted, AllocationRolledBack, MultiMmFillAllocated,
