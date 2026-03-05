@@ -10,11 +10,13 @@
 //! - [`InMemoryCounterpartyRepository`]: Counterparty persistence
 //! - [`InMemoryMmPerformanceRepository`]: MM performance event persistence
 //! - [`InMemoryQuoteLockRepository`]: Quote locking for acceptance flow
+//! - [`InMemoryNegotiationAuditLog`]: Negotiation audit log with μs precision
 //!
 //! ## Thread Safety
 //!
 //! All implementations use `Arc<RwLock<HashMap>>` or `DashMap` for thread-safe access.
 
+pub mod audit_log_repository;
 pub mod counterparty_repository;
 pub mod mm_performance_repository;
 pub mod mock_services;
@@ -23,6 +25,7 @@ pub mod rfq_repository;
 pub mod trade_repository;
 pub mod venue_repository;
 
+pub use audit_log_repository::InMemoryNegotiationAuditLog;
 pub use counterparty_repository::InMemoryCounterpartyRepository;
 pub use mm_performance_repository::InMemoryMmPerformanceRepository;
 pub use mock_services::{MockLastLookBehavior, MockLastLookService, MockRiskCheckService};
