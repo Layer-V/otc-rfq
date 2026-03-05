@@ -158,6 +158,12 @@ impl LastLookSent {
             timeout_ms: timeout.as_millis() as u64,
         }
     }
+
+    /// Returns the timeout as a Duration.
+    #[must_use]
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms)
+    }
 }
 
 impl DomainEvent for LastLookSent {

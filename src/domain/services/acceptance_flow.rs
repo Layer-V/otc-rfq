@@ -172,7 +172,6 @@ pub struct AcceptanceFlow {
     last_look_service: Arc<dyn LastLookService>,
     executor: Arc<dyn TradeExecutor>,
     config: AcceptanceFlowConfig,
-    holder_id: LockHolderId,
 }
 
 impl AcceptanceFlow {
@@ -191,7 +190,6 @@ impl AcceptanceFlow {
             last_look_service,
             executor,
             config,
-            holder_id: LockHolderId::new(),
         }
     }
 
@@ -199,12 +197,6 @@ impl AcceptanceFlow {
     #[must_use]
     pub fn config(&self) -> &AcceptanceFlowConfig {
         &self.config
-    }
-
-    /// Returns the holder ID.
-    #[must_use]
-    pub fn holder_id(&self) -> LockHolderId {
-        self.holder_id
     }
 
     /// Executes the acceptance flow.
@@ -245,7 +237,9 @@ impl AcceptanceFlow {
             ));
         }
         let ttl = self.config.lock_config.effective_ttl(None);
-        self.lock_service.lock(quote_id, self.holder_id, ttl).await
+        // Generate fresh holder ID per accept() call to prevent concurrent accepts sharing the same holder
+        let holder_id = LockHolderId::new();
+        self.lock_service.lock(quote_id, holder_id, ttl).await
     }
 
     async fn execute_with_lock(

@@ -321,12 +321,12 @@ impl DomainError {
             Self::OperationNotAllowed(_) => 2099,
 
             // Compliance errors (3000-3999)
-            Self::RiskCheckFailed(_) => 3001,
-            Self::ComplianceBlocked(_) => 3002,
-            Self::KycFailed(_) => 3003,
-            Self::CounterpartyNotAuthorized(_) => 3004,
-            Self::TradingLimitExceeded(_) => 3005,
-            Self::InstrumentNotAllowed(_) => 3006,
+            Self::ComplianceBlocked(_) => 3001,
+            Self::KycFailed(_) => 3002,
+            Self::CounterpartyNotAuthorized(_) => 3003,
+            Self::TradingLimitExceeded(_) => 3004,
+            Self::InstrumentNotAllowed(_) => 3005,
+            Self::RiskCheckFailed(_) => 3006,
 
             // Arithmetic errors (4000-4999)
             Self::Overflow => 4001,
@@ -676,9 +676,9 @@ mod tests {
                 .code(),
                 2014
             );
-            assert_eq!(DomainError::RiskCheckFailed("".to_string()).code(), 3001);
-            assert_eq!(DomainError::ComplianceBlocked("".to_string()).code(), 3002);
-            assert_eq!(DomainError::KycFailed("".to_string()).code(), 3003);
+            assert_eq!(DomainError::ComplianceBlocked("".to_string()).code(), 3001);
+            assert_eq!(DomainError::KycFailed("".to_string()).code(), 3002);
+            assert_eq!(DomainError::RiskCheckFailed("".to_string()).code(), 3006);
             assert_eq!(DomainError::Overflow.code(), 4001);
             assert_eq!(DomainError::Underflow.code(), 4002);
             assert_eq!(DomainError::DivisionByZero.code(), 4003);
