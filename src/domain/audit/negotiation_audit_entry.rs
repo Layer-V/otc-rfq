@@ -198,8 +198,9 @@ impl NegotiationAuditEntry {
     pub fn timestamp_iso8601(&self) -> String {
         let secs = self.timestamp_us / 1_000_000;
         let micros = (self.timestamp_us % 1_000_000).unsigned_abs();
-        let datetime = chrono::DateTime::from_timestamp(secs, (micros * 1000) as u32)
-            .unwrap_or(chrono::DateTime::UNIX_EPOCH);
+        let datetime =
+            chrono::DateTime::<chrono::Utc>::from_timestamp(secs, (micros * 1000) as u32)
+                .unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH);
         datetime.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
     }
 }

@@ -6,12 +6,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Supported formats for compliance report exports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExportFormat {
     /// Comma-separated values format.
     Csv,
     /// JavaScript Object Notation format.
+    #[default]
     Json,
 }
 
@@ -47,12 +48,6 @@ impl fmt::Display for ExportFormat {
             Self::Csv => write!(f, "CSV"),
             Self::Json => write!(f, "JSON"),
         }
-    }
-}
-
-impl Default for ExportFormat {
-    fn default() -> Self {
-        Self::Json
     }
 }
 

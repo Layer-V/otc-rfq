@@ -230,26 +230,38 @@ mod tests {
         let log = InMemoryNegotiationAuditLog::new();
         let rfq_id = test_rfq_id();
 
-        // Add entries with small delays to ensure different timestamps
-        for action in [
-            AuditAction::QuoteSent,
-            AuditAction::CounterReceived,
-            AuditAction::Accepted,
-        ] {
-            let entry = create_entry(rfq_id, action);
-            log.append_audit(entry).await.unwrap();
-            std::thread::sleep(std::time::Duration::from_micros(10));
-        }
+        // Create entries with explicit out-of-order timestamps to test sorting
+        let mut entry1 = create_entry(rfq_id, AuditAction::QuoteSent);
+        entry1.timestamp_us = 3000; // Third chronologically
+
+        let mut entry2 = create_entry(rfq_id, AuditAction::CounterReceived);
+        entry2.timestamp_us = 1000; // First chronologically
+
+        let mut entry3 = create_entry(rfq_id, AuditAction::Accepted);
+        entry3.timestamp_us = 2000; // Second chronologically
+
+        // Add in non-chronological order
+        log.append_audit(entry1).await.unwrap();
+        log.append_audit(entry2).await.unwrap();
+        log.append_audit(entry3).await.unwrap();
 
         let trail = log.get_audit_trail(rfq_id).await.unwrap();
         assert_eq!(trail.len(), 3);
 
-        // Verify ordering using windows
-        for window in trail.windows(2) {
-            if let [prev, curr] = window {
-                assert!(curr.timestamp_us >= prev.timestamp_us);
-            }
-        }
+        // Verify entries are sorted by timestamp_us using pattern matching
+        let timestamps: Vec<i64> = trail.iter().map(|e| e.timestamp_us).collect();
+        assert_eq!(timestamps, vec![1000, 2000, 3000]);
+
+        // Verify actions match expected order after sorting
+        let actions: Vec<AuditAction> = trail.iter().map(|e| e.action).collect();
+        assert_eq!(
+            actions,
+            vec![
+                AuditAction::CounterReceived,
+                AuditAction::Accepted,
+                AuditAction::QuoteSent
+            ]
+        );
     }
 
     #[tokio::test]

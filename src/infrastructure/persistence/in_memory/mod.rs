@@ -14,7 +14,8 @@
 //!
 //! ## Thread Safety
 //!
-//! All implementations use `Arc<RwLock<HashMap>>` or `DashMap` for thread-safe access.
+//! All implementations use appropriate synchronization primitives (e.g. `Arc<RwLock<HashMap<_>>>`,
+//! `DashMap`, or `Mutex<Vec<_>>`) for thread-safe access.
 
 pub mod audit_log_repository;
 pub mod counterparty_repository;
