@@ -8,7 +8,9 @@
 //! - **Events**: Domain events for event sourcing and audit trail
 //! - **Errors**: Domain-specific error types
 //! - **Services**: Domain services for complex business logic
+//! - **Audit**: Negotiation audit logging with μs precision
 
+pub mod audit;
 pub mod entities;
 pub mod errors;
 pub mod events;
