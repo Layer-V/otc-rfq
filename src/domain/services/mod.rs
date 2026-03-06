@@ -29,6 +29,9 @@ pub use block_trade::{BlockTradeConfig, ReportingTier, TierMultiplierError, Tier
 pub use conflict_resolver::{
     ConflictContext, ConflictResolver, CounterPriceInfo, FirstCommitWinsResolver,
 };
-pub use last_look::{LastLookConfig, LastLookResult, LastLookService, LastLookStats};
+pub use last_look::{
+    LastLookConfig, LastLookRejectReason, LastLookResult, LastLookService, LastLookStats,
+    MmLastLookConfig,
+};
 pub use quote_lock::{LockHolderId, QuoteLock, QuoteLockConfig, QuoteLockService};
 pub use risk_check::{RiskCheckConfig, RiskCheckService, RiskResult};

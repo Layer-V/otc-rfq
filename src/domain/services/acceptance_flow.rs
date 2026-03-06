@@ -315,7 +315,7 @@ impl AcceptanceFlow {
         match &result {
             LastLookResult::Confirmed { .. } => Ok(Some(result)),
             LastLookResult::Rejected { reason, .. } => {
-                Err(DomainError::LastLookRejected(reason.clone()))
+                Err(DomainError::LastLookRejected(reason.to_string()))
             }
             LastLookResult::Timeout { timeout, .. } => Err(DomainError::LastLookTimeout(format!(
                 "Timed out after {}ms",
