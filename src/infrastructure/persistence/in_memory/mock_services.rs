@@ -6,7 +6,9 @@
 use crate::domain::entities::quote::Quote;
 use crate::domain::entities::rfq::Rfq;
 use crate::domain::errors::DomainResult;
-use crate::domain::services::last_look::{LastLookResult, LastLookService, LastLookStats};
+use crate::domain::services::last_look::{
+    LastLookRejectReason, LastLookResult, LastLookService, LastLookStats,
+};
 use crate::domain::services::risk_check::{RiskCheckService, RiskResult};
 use crate::domain::value_objects::VenueId;
 use async_trait::async_trait;
@@ -128,7 +130,7 @@ pub enum MockLastLookBehavior {
     /// Always confirm.
     Confirm,
     /// Always reject with reason.
-    Reject(String),
+    Reject(LastLookRejectReason),
     /// Always timeout.
     Timeout,
 }
@@ -144,11 +146,23 @@ impl MockLastLookService {
         }
     }
 
-    /// Creates a mock that always rejects.
+    /// Creates a mock that always rejects with a typed reason.
     #[must_use]
-    pub fn rejecting(reason: impl Into<String>) -> Self {
+    pub fn rejecting(reason: LastLookRejectReason) -> Self {
         Self {
-            result: Mutex::new(MockLastLookBehavior::Reject(reason.into())),
+            result: Mutex::new(MockLastLookBehavior::Reject(reason)),
+            requires_last_look: true,
+            stats: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Creates a mock that always rejects with a string reason.
+    #[must_use]
+    pub fn rejecting_other(reason: impl Into<String>) -> Self {
+        Self {
+            result: Mutex::new(MockLastLookBehavior::Reject(LastLookRejectReason::Other(
+                reason.into(),
+            ))),
             requires_last_look: true,
             stats: Mutex::new(HashMap::new()),
         }
@@ -299,13 +313,30 @@ mod tests {
 
     #[tokio::test]
     async fn mock_last_look_rejecting() {
-        let service = MockLastLookService::rejecting("Price moved");
+        let service = MockLastLookService::rejecting(LastLookRejectReason::PriceMoved);
         let rfq = create_test_rfq();
         let quote = create_test_quote(&rfq);
 
         let result = service.request(&quote, Duration::from_millis(200)).await;
         assert!(result.is_rejected());
-        assert_eq!(result.rejection_reason(), Some("Price moved"));
+        assert_eq!(
+            result.rejection_reason(),
+            Some(&LastLookRejectReason::PriceMoved)
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_last_look_rejecting_other() {
+        let service = MockLastLookService::rejecting_other("Custom reason");
+        let rfq = create_test_rfq();
+        let quote = create_test_quote(&rfq);
+
+        let result = service.request(&quote, Duration::from_millis(200)).await;
+        assert!(result.is_rejected());
+        assert!(matches!(
+            result.rejection_reason(),
+            Some(&LastLookRejectReason::Other(_))
+        ));
     }
 
     #[tokio::test]

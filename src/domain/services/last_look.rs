@@ -26,11 +26,125 @@
 
 use crate::domain::entities::quote::Quote;
 use crate::domain::errors::DomainError;
-use crate::domain::value_objects::{QuoteId, Timestamp, VenueId};
+use crate::domain::value_objects::{CounterpartyId, QuoteId, Timestamp, VenueId};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
+
+/// Reasons for last-look rejection by a market maker.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum LastLookRejectReason {
+    /// Price moved unfavorably since quote was issued.
+    PriceMoved,
+    /// MM capacity limits exceeded.
+    CapacityExceeded,
+    /// Risk limits would be breached.
+    RiskLimit,
+    /// Request timed out before MM responded.
+    Timeout,
+    /// Other reason with description.
+    Other(String),
+}
+
+impl LastLookRejectReason {
+    /// Creates a price moved rejection.
+    #[must_use]
+    pub fn price_moved() -> Self {
+        Self::PriceMoved
+    }
+
+    /// Creates a capacity exceeded rejection.
+    #[must_use]
+    pub fn capacity_exceeded() -> Self {
+        Self::CapacityExceeded
+    }
+
+    /// Creates a risk limit rejection.
+    #[must_use]
+    pub fn risk_limit() -> Self {
+        Self::RiskLimit
+    }
+
+    /// Creates a timeout rejection.
+    #[must_use]
+    pub fn timeout() -> Self {
+        Self::Timeout
+    }
+
+    /// Creates an other rejection with custom reason.
+    #[must_use]
+    pub fn other(reason: impl Into<String>) -> Self {
+        Self::Other(reason.into())
+    }
+
+    /// Returns true if this is a timeout rejection.
+    #[must_use]
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, Self::Timeout)
+    }
+}
+
+impl fmt::Display for LastLookRejectReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PriceMoved => write!(f, "price_moved"),
+            Self::CapacityExceeded => write!(f, "capacity_exceeded"),
+            Self::RiskLimit => write!(f, "risk_limit"),
+            Self::Timeout => write!(f, "timeout"),
+            Self::Other(reason) => write!(f, "other: {reason}"),
+        }
+    }
+}
+
+/// Per-market-maker last-look configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MmLastLookConfig {
+    /// The market maker this config applies to.
+    pub mm_id: CounterpartyId,
+    /// Whether last-look is enabled for this MM.
+    pub enabled: bool,
+    /// Maximum window in milliseconds (default 200ms).
+    pub max_window_ms: u64,
+}
+
+impl MmLastLookConfig {
+    /// Default window in milliseconds.
+    pub const DEFAULT_WINDOW_MS: u64 = 200;
+
+    /// Creates a new MM last-look config.
+    #[must_use]
+    pub fn new(mm_id: CounterpartyId) -> Self {
+        Self {
+            mm_id,
+            enabled: true,
+            max_window_ms: Self::DEFAULT_WINDOW_MS,
+        }
+    }
+
+    /// Creates a disabled config.
+    #[must_use]
+    pub fn disabled(mm_id: CounterpartyId) -> Self {
+        Self {
+            mm_id,
+            enabled: false,
+            max_window_ms: Self::DEFAULT_WINDOW_MS,
+        }
+    }
+
+    /// Sets the maximum window.
+    #[must_use]
+    pub fn with_max_window_ms(mut self, ms: u64) -> Self {
+        self.max_window_ms = ms;
+        self
+    }
+
+    /// Returns the timeout as a Duration.
+    #[must_use]
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.max_window_ms)
+    }
+}
 
 /// Result of a last-look request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,7 +161,7 @@ pub enum LastLookResult {
         /// The quote that was rejected.
         quote_id: QuoteId,
         /// Reason for rejection.
-        reason: String,
+        reason: LastLookRejectReason,
         /// When the rejection was received.
         rejected_at: Timestamp,
     },
@@ -72,12 +186,22 @@ impl LastLookResult {
         }
     }
 
-    /// Creates a rejected result.
+    /// Creates a rejected result with typed reason.
     #[must_use]
-    pub fn rejected(quote_id: QuoteId, reason: impl Into<String>) -> Self {
+    pub fn rejected(quote_id: QuoteId, reason: LastLookRejectReason) -> Self {
         Self::Rejected {
             quote_id,
-            reason: reason.into(),
+            reason,
+            rejected_at: Timestamp::now(),
+        }
+    }
+
+    /// Creates a rejected result from a string reason (for backwards compatibility).
+    #[must_use]
+    pub fn rejected_other(quote_id: QuoteId, reason: impl Into<String>) -> Self {
+        Self::Rejected {
+            quote_id,
+            reason: LastLookRejectReason::Other(reason.into()),
             rejected_at: Timestamp::now(),
         }
     }
@@ -122,7 +246,7 @@ impl LastLookResult {
 
     /// Returns the rejection reason if this is a rejection.
     #[must_use]
-    pub fn rejection_reason(&self) -> Option<&str> {
+    pub fn rejection_reason(&self) -> Option<&LastLookRejectReason> {
         match self {
             Self::Rejected { reason, .. } => Some(reason),
             _ => None,
@@ -136,7 +260,9 @@ impl LastLookResult {
     pub fn to_error(&self) -> Option<DomainError> {
         match self {
             Self::Confirmed { .. } => None,
-            Self::Rejected { reason, .. } => Some(DomainError::LastLookRejected(reason.clone())),
+            Self::Rejected { reason, .. } => {
+                Some(DomainError::LastLookRejected(reason.to_string()))
+            }
             Self::Timeout { timeout, .. } => Some(DomainError::LastLookTimeout(format!(
                 "Last-look timed out after {}ms",
                 timeout.as_millis()
@@ -344,13 +470,71 @@ mod tests {
     #[test]
     fn last_look_result_rejected() {
         let quote_id = test_quote_id();
-        let result = LastLookResult::rejected(quote_id, "Price moved");
+        let result = LastLookResult::rejected(quote_id, LastLookRejectReason::PriceMoved);
 
         assert!(!result.is_confirmed());
         assert!(result.is_rejected());
         assert!(!result.is_timeout());
-        assert_eq!(result.rejection_reason(), Some("Price moved"));
+        assert_eq!(
+            result.rejection_reason(),
+            Some(&LastLookRejectReason::PriceMoved)
+        );
         assert!(result.to_error().is_some());
+    }
+
+    #[test]
+    fn last_look_result_rejected_other() {
+        let quote_id = test_quote_id();
+        let result = LastLookResult::rejected_other(quote_id, "Custom reason");
+
+        assert!(result.is_rejected());
+        assert!(matches!(
+            result.rejection_reason(),
+            Some(&LastLookRejectReason::Other(_))
+        ));
+    }
+
+    #[test]
+    fn last_look_reject_reason_display() {
+        assert_eq!(LastLookRejectReason::PriceMoved.to_string(), "price_moved");
+        assert_eq!(
+            LastLookRejectReason::CapacityExceeded.to_string(),
+            "capacity_exceeded"
+        );
+        assert_eq!(LastLookRejectReason::RiskLimit.to_string(), "risk_limit");
+        assert_eq!(LastLookRejectReason::Timeout.to_string(), "timeout");
+        assert_eq!(
+            LastLookRejectReason::Other("test".to_string()).to_string(),
+            "other: test"
+        );
+    }
+
+    #[test]
+    fn mm_last_look_config_new() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let config = MmLastLookConfig::new(mm_id.clone());
+
+        assert_eq!(config.mm_id, mm_id);
+        assert!(config.enabled);
+        assert_eq!(config.max_window_ms, 200);
+        assert_eq!(config.timeout(), Duration::from_millis(200));
+    }
+
+    #[test]
+    fn mm_last_look_config_disabled() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let config = MmLastLookConfig::disabled(mm_id);
+
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn mm_last_look_config_with_window() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let config = MmLastLookConfig::new(mm_id).with_max_window_ms(300);
+
+        assert_eq!(config.max_window_ms, 300);
+        assert_eq!(config.timeout(), Duration::from_millis(300));
     }
 
     #[test]
