@@ -5,7 +5,8 @@
 //! ## Aggregates
 //!
 //! - [`Rfq`]: Request-for-Quote aggregate with state machine
-//! - `Trade`: Executed trade aggregate
+//! - [`Trade`]: Executed trade aggregate
+//! - [`BlockTrade`]: Pre-arranged bilateral block trade
 //! - `Venue`: Liquidity venue configuration
 //!
 //! ## Entities
@@ -15,6 +16,7 @@
 //! - `MmPerformanceMetrics`: Market maker performance tracking
 
 pub mod allocation;
+pub mod block_trade;
 pub mod counter_quote;
 pub mod counterparty;
 pub mod mm_performance;
@@ -28,6 +30,9 @@ pub mod venue;
 mod tests;
 
 pub use allocation::Allocation;
+pub use block_trade::{
+    BlockTrade, BlockTradeId, BlockTradeState, BlockTradeValidation, InvalidBlockTradeStateError,
+};
 pub use counter_quote::{CounterQuote, CounterQuoteBuilder};
 pub use counterparty::{
     Counterparty, CounterpartyLimits, CounterpartyType, InvalidCounterpartyTypeError,

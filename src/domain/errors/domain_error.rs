@@ -223,6 +223,23 @@ pub enum DomainError {
     #[error("conflict detected: {0}")]
     ConflictDetected(String),
 
+    /// Block trade not found.
+    #[error("block trade not found: {0}")]
+    BlockTradeNotFound(String),
+
+    /// Generic invalid state transition (for non-RFQ state machines).
+    #[error("invalid state transition from {from} to {to}")]
+    GenericStateTransitionError {
+        /// The current state.
+        from: String,
+        /// The attempted target state.
+        to: String,
+    },
+
+    /// Validation failed.
+    #[error("validation failed: {0}")]
+    ValidationFailed(String),
+
     // ========================================================================
     // Compliance Errors (3000-3999)
     // ========================================================================
@@ -241,6 +258,10 @@ pub enum DomainError {
     /// Counterparty not authorized.
     #[error("counterparty not authorized: {0}")]
     CounterpartyNotAuthorized(String),
+
+    /// Unauthorized counterparty for operation.
+    #[error("unauthorized counterparty: {0}")]
+    UnauthorizedCounterparty(String),
 
     /// Trading limit exceeded.
     #[error("trading limit exceeded: {0}")]
@@ -323,6 +344,9 @@ impl DomainError {
             Self::LastLookTimeout(_) => 2018,
             Self::AcceptanceTimeout(_) => 2019,
             Self::ConflictDetected(_) => 2020,
+            Self::BlockTradeNotFound(_) => 2021,
+            Self::GenericStateTransitionError { .. } => 2022,
+            Self::ValidationFailed(_) => 2023,
             Self::OperationNotAllowed(_) => 2099,
 
             // Compliance errors (3000-3999)
@@ -332,6 +356,7 @@ impl DomainError {
             Self::TradingLimitExceeded(_) => 3004,
             Self::InstrumentNotAllowed(_) => 3005,
             Self::RiskCheckFailed(_) => 3006,
+            Self::UnauthorizedCounterparty(_) => 3007,
 
             // Arithmetic errors (4000-4999)
             Self::Overflow => 4001,
