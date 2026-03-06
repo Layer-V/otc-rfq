@@ -26,7 +26,9 @@ pub use acceptance_flow::{
     AcceptanceFailureReason, AcceptanceFlow, AcceptanceFlowConfig, AcceptanceResult, TradeExecutor,
 };
 pub use block_trade::{BlockTradeConfig, ReportingTier, TierMultiplierError, TierMultipliers};
-pub use conflict_resolver::{ConflictContext, ConflictResolver, FirstCommitWinsResolver};
+pub use conflict_resolver::{
+    ConflictContext, ConflictResolver, CounterPriceInfo, FirstCommitWinsResolver,
+};
 pub use last_look::{LastLookConfig, LastLookResult, LastLookService, LastLookStats};
 pub use quote_lock::{LockHolderId, QuoteLock, QuoteLockConfig, QuoteLockService};
 pub use risk_check::{RiskCheckConfig, RiskCheckService, RiskResult};

@@ -90,10 +90,29 @@ impl Resolution {
         }
     }
 
-    /// Returns true if this resolution allows the requester to proceed.
+    /// Returns true if this resolution allows the requester to proceed immediately.
+    ///
+    /// Note: For `FirstCommitWins`, only the winner can proceed. Use
+    /// `can_proceed_as` for caller-aware checks.
     #[must_use]
     pub fn allows_proceed(&self) -> bool {
         matches!(self, Self::AcceptBetterPrice { .. })
+    }
+
+    /// Returns true if this resolution requires follow-up handling.
+    #[must_use]
+    pub fn requires_followup(&self) -> bool {
+        matches!(self, Self::Retry { .. } | Self::Notify { .. })
+    }
+
+    /// Returns true if the given requester can proceed based on this resolution.
+    #[must_use]
+    pub fn can_proceed_as(&self, requester: &LockHolderId) -> bool {
+        match self {
+            Self::FirstCommitWins { winner_id } => winner_id == requester,
+            Self::AcceptBetterPrice { .. } => true,
+            Self::Retry { .. } | Self::Cancel { .. } | Self::Notify { .. } => false,
+        }
     }
 }
 
