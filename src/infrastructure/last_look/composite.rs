@@ -8,7 +8,7 @@ use crate::domain::services::last_look::{
 };
 use crate::domain::value_objects::VenueId;
 use async_trait::async_trait;
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,10 +63,10 @@ pub struct CompositeLastLookService {
     grpc: Option<Arc<dyn LastLookService>>,
     /// FIX client.
     fix: Option<Arc<dyn LastLookService>>,
-    /// Venue routing configuration.
-    routing: RwLock<HashMap<String, VenueRouting>>,
-    /// Aggregated stats per venue.
-    stats: RwLock<HashMap<String, LastLookStats>>,
+    /// Venue routing configuration (lock-free for sync access).
+    routing: DashMap<String, VenueRouting>,
+    /// Aggregated stats.
+    stats: RwLock<LastLookStats>,
 }
 
 impl fmt::Debug for CompositeLastLookService {
@@ -87,8 +87,8 @@ impl CompositeLastLookService {
             websocket: None,
             grpc: None,
             fix: None,
-            routing: RwLock::new(HashMap::new()),
-            stats: RwLock::new(HashMap::new()),
+            routing: DashMap::new(),
+            stats: RwLock::new(LastLookStats::new()),
         }
     }
 
@@ -114,9 +114,8 @@ impl CompositeLastLookService {
     }
 
     /// Registers a venue with its routing configuration.
-    pub async fn register_venue(&self, venue_id: &VenueId, routing: VenueRouting) {
-        let mut guard = self.routing.write().await;
-        guard.insert(venue_id.to_string(), routing);
+    pub fn register_venue(&self, venue_id: &VenueId, routing: VenueRouting) {
+        self.routing.insert(venue_id.to_string(), routing);
     }
 
     /// Returns the client for a given channel.
@@ -128,18 +127,9 @@ impl CompositeLastLookService {
         }
     }
 
-    /// Returns the routing for a venue (sync version using try_read).
-    fn get_routing_sync(&self, venue_id: &VenueId) -> Option<VenueRouting> {
-        self.routing
-            .try_read()
-            .ok()
-            .and_then(|guard| guard.get(&venue_id.to_string()).cloned())
-    }
-
-    /// Returns the routing for a venue (async version).
-    async fn get_routing(&self, venue_id: &VenueId) -> Option<VenueRouting> {
-        let guard = self.routing.read().await;
-        guard.get(&venue_id.to_string()).cloned()
+    /// Returns the routing for a venue (lock-free via DashMap).
+    fn get_routing(&self, venue_id: &VenueId) -> Option<VenueRouting> {
+        self.routing.get(&venue_id.to_string()).map(|v| v.clone())
     }
 }
 
@@ -155,7 +145,7 @@ impl LastLookService for CompositeLastLookService {
         let venue_id = quote.venue_id();
 
         // Get routing for this venue
-        let routing = match self.get_routing(venue_id).await {
+        let routing = match self.get_routing(venue_id) {
             Some(r) => r,
             None => {
                 // No routing configured, auto-confirm
@@ -188,26 +178,23 @@ impl LastLookService for CompositeLastLookService {
     }
 
     fn requires_last_look(&self, venue_id: &VenueId) -> bool {
-        // Use sync version with try_read for sync method
-        self.get_routing_sync(venue_id)
+        // DashMap provides lock-free reads, no contention issues
+        self.get_routing(venue_id)
             .map(|r| r.requires_last_look)
             .unwrap_or(false)
     }
 
-    async fn get_stats(&self, venue_id: &VenueId) -> Option<LastLookStats> {
+    async fn get_stats(&self, _venue_id: &VenueId) -> Option<LastLookStats> {
         let guard = self.stats.read().await;
-        guard.get(&venue_id.to_string()).cloned()
+        Some(guard.clone())
     }
 
-    async fn record_result(&self, venue_id: &VenueId, result: &LastLookResult) {
+    async fn record_result(&self, _venue_id: &VenueId, result: &LastLookResult) {
         let mut guard = self.stats.write().await;
-        let stats = guard
-            .entry(venue_id.to_string())
-            .or_insert_with(LastLookStats::new);
         match result {
-            LastLookResult::Confirmed { .. } => stats.record_confirmation(),
-            LastLookResult::Rejected { .. } => stats.record_rejection(),
-            LastLookResult::Timeout { .. } => stats.record_timeout(),
+            LastLookResult::Confirmed { .. } => guard.record_confirmation(),
+            LastLookResult::Rejected { .. } => guard.record_rejection(),
+            LastLookResult::Timeout { .. } => guard.record_timeout(),
         }
     }
 }
@@ -258,9 +245,7 @@ mod tests {
     async fn last_look_not_required_auto_confirms() {
         let service = CompositeLastLookService::new();
         let venue = VenueId::new("test-venue");
-        service
-            .register_venue(&venue, VenueRouting::new(LastLookChannel::WebSocket, false))
-            .await;
+        service.register_venue(&venue, VenueRouting::new(LastLookChannel::WebSocket, false));
 
         let quote = create_test_quote(&venue);
         let result = service.request(&quote, Duration::from_millis(200)).await;
@@ -271,25 +256,21 @@ mod tests {
     async fn missing_channel_rejects() {
         let service = CompositeLastLookService::new();
         let venue = VenueId::new("test-venue");
-        service
-            .register_venue(&venue, VenueRouting::new(LastLookChannel::WebSocket, true))
-            .await;
+        service.register_venue(&venue, VenueRouting::new(LastLookChannel::WebSocket, true));
 
         let quote = create_test_quote(&venue);
         let result = service.request(&quote, Duration::from_millis(200)).await;
         assert!(result.is_rejected());
     }
 
-    #[tokio::test]
-    async fn requires_last_look() {
+    #[test]
+    fn requires_last_look() {
         let service = CompositeLastLookService::new();
         let venue = VenueId::new("test-venue");
 
         assert!(!service.requires_last_look(&venue));
 
-        service
-            .register_venue(&venue, VenueRouting::new(LastLookChannel::Grpc, true))
-            .await;
+        service.register_venue(&venue, VenueRouting::new(LastLookChannel::Grpc, true));
         assert!(service.requires_last_look(&venue));
     }
 }

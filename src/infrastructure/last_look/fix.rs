@@ -8,8 +8,8 @@ use crate::domain::entities::quote::Quote;
 use crate::domain::services::last_look::{LastLookResult, LastLookService, LastLookStats};
 use crate::domain::value_objects::VenueId;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -47,10 +47,10 @@ impl Default for FixLastLookConfig {
 pub struct FixLastLookClient {
     /// Configuration.
     config: FixLastLookConfig,
-    /// Venues that require last-look.
-    venues_requiring_last_look: RwLock<HashMap<String, bool>>,
+    /// Venues that require last-look (lock-free for sync access).
+    venues_requiring_last_look: DashMap<String, bool>,
     /// Stats per venue.
-    stats: RwLock<HashMap<String, LastLookStats>>,
+    stats: RwLock<LastLookStats>,
 }
 
 impl fmt::Debug for FixLastLookClient {
@@ -69,15 +69,15 @@ impl FixLastLookClient {
     pub fn new(config: FixLastLookConfig) -> Self {
         Self {
             config,
-            venues_requiring_last_look: RwLock::new(HashMap::new()),
-            stats: RwLock::new(HashMap::new()),
+            venues_requiring_last_look: DashMap::new(),
+            stats: RwLock::new(LastLookStats::new()),
         }
     }
 
     /// Registers a venue as requiring last-look.
-    pub async fn register_venue(&self, venue_id: &VenueId, requires: bool) {
-        let mut guard = self.venues_requiring_last_look.write().await;
-        guard.insert(venue_id.to_string(), requires);
+    pub fn register_venue(&self, venue_id: &VenueId, requires: bool) {
+        self.venues_requiring_last_look
+            .insert(venue_id.to_string(), requires);
     }
 
     /// Returns the FIX session identifier.
@@ -104,28 +104,24 @@ impl LastLookService for FixLastLookClient {
     }
 
     fn requires_last_look(&self, venue_id: &VenueId) -> bool {
-        // Use try_read for sync method - returns false if lock is contended
+        // DashMap provides lock-free reads, no contention issues
         self.venues_requiring_last_look
-            .try_read()
-            .ok()
-            .and_then(|guard| guard.get(&venue_id.to_string()).copied())
+            .get(&venue_id.to_string())
+            .map(|v| *v)
             .unwrap_or(false)
     }
 
-    async fn get_stats(&self, venue_id: &VenueId) -> Option<LastLookStats> {
+    async fn get_stats(&self, _venue_id: &VenueId) -> Option<LastLookStats> {
         let guard = self.stats.read().await;
-        guard.get(&venue_id.to_string()).cloned()
+        Some(guard.clone())
     }
 
-    async fn record_result(&self, venue_id: &VenueId, result: &LastLookResult) {
+    async fn record_result(&self, _venue_id: &VenueId, result: &LastLookResult) {
         let mut guard = self.stats.write().await;
-        let stats = guard
-            .entry(venue_id.to_string())
-            .or_insert_with(LastLookStats::new);
         match result {
-            LastLookResult::Confirmed { .. } => stats.record_confirmation(),
-            LastLookResult::Rejected { .. } => stats.record_rejection(),
-            LastLookResult::Timeout { .. } => stats.record_timeout(),
+            LastLookResult::Confirmed { .. } => guard.record_confirmation(),
+            LastLookResult::Rejected { .. } => guard.record_rejection(),
+            LastLookResult::Timeout { .. } => guard.record_timeout(),
         }
     }
 }
@@ -158,14 +154,14 @@ mod tests {
         assert!(session_id.contains("SERVER"));
     }
 
-    #[tokio::test]
-    async fn register_venue() {
+    #[test]
+    fn register_venue() {
         let client = FixLastLookClient::new(FixLastLookConfig::default());
         let venue = VenueId::new("test-venue");
 
         assert!(!client.requires_last_look(&venue));
 
-        client.register_venue(&venue, true).await;
+        client.register_venue(&venue, true);
         assert!(client.requires_last_look(&venue));
     }
 }
