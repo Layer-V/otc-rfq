@@ -185,19 +185,39 @@ mod tests {
     async fn find_pending_excludes_terminal() {
         let repo = InMemoryBlockTradeRepository::new();
 
-        // Create a pending trade
+        // Create a pending trade (non-terminal)
         let pending = create_test_block_trade("buyer-1", "seller-1");
+        let pending_id = pending.id();
         repo.save(&pending).await.unwrap();
 
-        // Create an executed trade
+        // Create a trade and move it to a terminal state (Executed)
         let mut executed = create_test_block_trade("buyer-2", "seller-2");
         executed.start_validation().unwrap();
-        // Note: We can't easily get to Executed state without full flow,
-        // but we can test that non-terminal states are included
+        // Skip to Approved state by recording validation and confirming
+        executed
+            .record_validation(
+                crate::domain::entities::block_trade::BlockTradeValidation::passed(),
+                None,
+            )
+            .unwrap();
+        executed
+            .confirm(&crate::domain::value_objects::CounterpartyId::new(
+                "buyer-2",
+            ))
+            .unwrap();
+        executed
+            .confirm(&crate::domain::value_objects::CounterpartyId::new(
+                "seller-2",
+            ))
+            .unwrap();
+        executed.start_execution().unwrap();
+        executed.mark_executed().unwrap();
         repo.save(&executed).await.unwrap();
 
         let pending_trades = repo.find_pending().await.unwrap();
-        assert_eq!(pending_trades.len(), 2); // Both are non-terminal
+        // Only the non-terminal (pending) trade should be returned
+        assert_eq!(pending_trades.len(), 1);
+        assert!(pending_trades.iter().all(|t| t.id() == pending_id));
     }
 
     #[tokio::test]

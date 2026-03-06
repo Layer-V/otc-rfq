@@ -503,7 +503,7 @@ impl BlockTrade {
         self.updated_at
     }
 
-    /// Returns the rejection reason, if rejected.
+    /// Reason for rejection or execution failure, depending on state.
     #[inline]
     #[must_use]
     pub fn rejection_reason(&self) -> Option<&str> {
@@ -552,10 +552,10 @@ impl BlockTrade {
         reporting_tier: Option<ReportingTier>,
     ) -> DomainResult<()> {
         if self.state != BlockTradeState::Validating {
-            return Err(DomainError::GenericStateTransitionError {
-                from: self.state.to_string(),
-                to: "recording validation".to_string(),
-            });
+            return Err(DomainError::OperationNotAllowed(format!(
+                "Cannot record validation when in state {} (expected Validating)",
+                self.state
+            )));
         }
 
         self.reporting_tier = reporting_tier;
@@ -588,10 +588,10 @@ impl BlockTrade {
     pub fn confirm(&mut self, counterparty_id: &CounterpartyId) -> DomainResult<()> {
         // Can only confirm during validation (after validation passes)
         if self.state != BlockTradeState::Validating {
-            return Err(DomainError::GenericStateTransitionError {
-                from: self.state.to_string(),
-                to: "confirming".to_string(),
-            });
+            return Err(DomainError::OperationNotAllowed(format!(
+                "Cannot confirm trade when in state {} (expected Validating)",
+                self.state
+            )));
         }
 
         // Check validation passed

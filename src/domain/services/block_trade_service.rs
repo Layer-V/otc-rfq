@@ -209,18 +209,28 @@ pub trait BlockTradeValidator: Send + Sync + fmt::Debug {
 }
 
 /// Default implementation of block trade validation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DefaultBlockTradeValidator {
     /// Maximum allowed price deviation from reference (as decimal, e.g., 0.05 = 5%).
     max_price_deviation: Option<rust_decimal::Decimal>,
 }
 
+impl Default for DefaultBlockTradeValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DefaultBlockTradeValidator {
     /// Creates a new default validator.
+    ///
+    /// By default, this enforces a maximum price deviation of 5% from the
+    /// reference price. Use [`Self::with_max_price_deviation`] to override.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            max_price_deviation: None,
+            // 0.05 = 5% maximum allowed price deviation
+            max_price_deviation: Some(rust_decimal::Decimal::new(5, 2)),
         }
     }
 
