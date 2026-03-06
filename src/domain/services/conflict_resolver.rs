@@ -109,7 +109,7 @@ impl ConflictResolver for FirstCommitWinsResolver {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
