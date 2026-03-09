@@ -81,14 +81,14 @@ pub use negotiation_events::{
     CounterQuoteReceived as NegotiationCounterQuoteReceived, CounterQuoteSent,
     NegotiationCompleted, NegotiationEvent, NegotiationOutcome,
 };
+pub use off_book_events::{
+    CollateralLocked, CollateralReleased, ExecutionStep, OffBookExecutionStarted, OffBookFailed,
+    OffBookSettled, TradeHash,
+};
 pub use rfq_events::{
     ExecutionFailed, ExecutionStarted, QuoteCollectionCompleted, QuoteCollectionStarted,
     QuoteReceived, QuoteRequestFailed, QuoteRequested, QuoteSelected, RfqCancelled, RfqCreated,
     RfqEvent, RfqExpired,
-};
-pub use off_book_events::{
-    CollateralLocked, CollateralReleased, ExecutionStep, OffBookExecutionStarted, OffBookFailed,
-    OffBookSettled, TradeHash,
 };
 pub use trade_events::{
     SettlementConfirmed, SettlementFailed, SettlementInitiated, TradeEvent, TradeExecuted,

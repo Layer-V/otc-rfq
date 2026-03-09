@@ -249,11 +249,13 @@ impl LastLookService for MockLastLookService {
 
 use crate::domain::entities::block_trade::BlockTrade;
 use crate::domain::events::TradeHash;
+use crate::domain::services::ReportingTier;
 use crate::domain::services::collateral_lock::{CollateralLockHandle, CollateralLockService};
 use crate::domain::services::position_service::{Position, PositionUpdateService};
-use crate::domain::services::report_scheduler::{ReportScheduler, ReportSchedulerConfig, ScheduledReport};
+use crate::domain::services::report_scheduler::{
+    ReportScheduler, ReportSchedulerConfig, ScheduledReport,
+};
 use crate::domain::services::settlement::{Fees, SettlementResult, SettlementService};
-use crate::domain::services::ReportingTier;
 use crate::domain::value_objects::{Instrument, Price as VoPrice};
 
 /// Mock implementation of [`CollateralLockService`] for testing.
@@ -314,7 +316,9 @@ impl CollateralLockService for MockCollateralLockService {
                 .ok()
                 .and_then(|g| g.clone())
                 .unwrap_or_else(|| "Mock collateral lock failure".to_string());
-            Err(crate::domain::errors::DomainError::CollateralLockFailed(reason))
+            Err(crate::domain::errors::DomainError::CollateralLockFailed(
+                reason,
+            ))
         }
     }
 
@@ -397,9 +401,8 @@ impl SettlementService for MockSettlementService {
     }
 
     async fn get_oracle_price(&self, _instrument_symbol: &str) -> DomainResult<VoPrice> {
-        VoPrice::new(50000.0).map_err(|e| {
-            crate::domain::errors::DomainError::ValidationError(e.to_string())
-        })
+        VoPrice::new(50000.0)
+            .map_err(|e| crate::domain::errors::DomainError::ValidationError(e.to_string()))
     }
 }
 

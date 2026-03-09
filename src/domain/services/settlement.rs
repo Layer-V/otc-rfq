@@ -8,8 +8,8 @@
 use crate::domain::entities::block_trade::BlockTrade;
 use crate::domain::errors::DomainResult;
 use crate::domain::events::TradeHash;
-use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::Price;
+use crate::domain::value_objects::timestamp::Timestamp;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

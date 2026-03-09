@@ -209,13 +209,21 @@ impl fmt::Display for DomainError {
             Self::UnauthorizedCounterparty(msg) => write!(f, "unauthorized counterparty: {}", msg),
             Self::ValidationFailed(msg) => write!(f, "validation failed: {}", msg),
             Self::InvalidNegotiationStateTransition { from, to } => {
-                write!(f, "invalid negotiation state transition from {} to {}", from, to)
+                write!(
+                    f,
+                    "invalid negotiation state transition from {} to {}",
+                    from, to
+                )
             }
             Self::MaxNegotiationRoundsReached { max_rounds } => {
                 write!(f, "maximum negotiation rounds ({}) reached", max_rounds)
             }
             Self::NoPriceImprovement { previous, proposed } => {
-                write!(f, "no price improvement: previous {}, proposed {}", previous, proposed)
+                write!(
+                    f,
+                    "no price improvement: previous {}, proposed {}",
+                    previous, proposed
+                )
             }
             Self::LastLookRejected(msg) => write!(f, "last-look rejected: {}", msg),
             Self::LastLookTimeout(msg) => write!(f, "last-look timeout: {}", msg),

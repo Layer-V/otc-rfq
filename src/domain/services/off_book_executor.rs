@@ -27,11 +27,11 @@
 
 use crate::domain::entities::block_trade::{BlockTrade, BlockTradeState};
 use crate::domain::errors::{DomainError, DomainResult};
+use crate::domain::events::DomainEvent;
 use crate::domain::events::off_book_events::{
     CollateralLocked, CollateralReleased, ExecutionStep, OffBookExecutionStarted, OffBookFailed,
     OffBookSettled,
 };
-use crate::domain::events::DomainEvent;
 use crate::domain::services::collateral_lock::{CollateralLockHandle, CollateralLockService};
 use crate::domain::services::position_service::PositionUpdateService;
 use crate::domain::services::report_scheduler::{ReportScheduler, ScheduledReport};
@@ -298,7 +298,9 @@ where
                 // Create a placeholder report
                 ScheduledReport::new(
                     trade.id().to_string(),
-                    trade.reporting_tier().unwrap_or(crate::domain::services::ReportingTier::Standard),
+                    trade
+                        .reporting_tier()
+                        .unwrap_or(crate::domain::services::ReportingTier::Standard),
                     Timestamp::now(),
                 )
             }

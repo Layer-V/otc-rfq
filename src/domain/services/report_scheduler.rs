@@ -88,8 +88,8 @@ pub struct ReportSchedulerConfig {
 impl Default for ReportSchedulerConfig {
     fn default() -> Self {
         Self {
-            standard_delay: Duration::from_secs(15 * 60),      // 15 minutes
-            large_delay: Duration::from_secs(60 * 60),         // 60 minutes
+            standard_delay: Duration::from_secs(15 * 60), // 15 minutes
+            large_delay: Duration::from_secs(60 * 60),    // 60 minutes
             very_large_delay: Duration::from_secs(8 * 60 * 60), // 8 hours (EOD approximation)
         }
     }
@@ -98,7 +98,11 @@ impl Default for ReportSchedulerConfig {
 impl ReportSchedulerConfig {
     /// Creates a new configuration with custom delays.
     #[must_use]
-    pub fn new(standard_delay: Duration, large_delay: Duration, very_large_delay: Duration) -> Self {
+    pub fn new(
+        standard_delay: Duration,
+        large_delay: Duration,
+        very_large_delay: Duration,
+    ) -> Self {
         Self {
             standard_delay,
             large_delay,
@@ -182,11 +186,8 @@ mod tests {
     #[test]
     fn scheduled_report_creation() {
         let publish_at = Timestamp::now().add_secs(900); // 15 min
-        let report = ScheduledReport::new(
-            "trade-123".to_string(),
-            ReportingTier::Standard,
-            publish_at,
-        );
+        let report =
+            ScheduledReport::new("trade-123".to_string(), ReportingTier::Standard, publish_at);
 
         assert_eq!(report.block_trade_id(), "trade-123");
         assert_eq!(report.tier(), ReportingTier::Standard);
