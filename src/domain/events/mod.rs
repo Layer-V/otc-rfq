@@ -58,6 +58,7 @@ pub mod conflict_events;
 pub mod domain_event;
 pub mod negotiation_events;
 pub mod off_book_events;
+pub mod reporting_events;
 pub mod rfq_events;
 pub mod trade_events;
 
@@ -93,3 +94,4 @@ pub use rfq_events::{
 pub use trade_events::{
     SettlementConfirmed, SettlementFailed, SettlementInitiated, TradeEvent, TradeExecuted,
 };
+pub use reporting_events::{BlockTradeReported, ReportScheduled};

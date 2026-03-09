@@ -21,6 +21,7 @@
 pub mod audit_log_repository;
 pub mod block_trade_repository;
 pub mod counterparty_repository;
+pub mod delayed_report_repository;
 pub mod mm_performance_repository;
 pub mod mock_services;
 pub mod quote_lock_repository;
@@ -37,3 +38,4 @@ pub use quote_lock_repository::InMemoryQuoteLockRepository;
 pub use rfq_repository::InMemoryRfqRepository;
 pub use trade_repository::InMemoryTradeRepository;
 pub use venue_repository::InMemoryVenueRepository;
+pub use delayed_report_repository::InMemoryDelayedReportRepository;
