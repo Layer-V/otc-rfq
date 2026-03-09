@@ -10,7 +10,7 @@ use crate::domain::services::last_look::{
     LastLookRejectReason, LastLookResult, LastLookService, LastLookStats,
 };
 use crate::domain::services::risk_check::{RiskCheckService, RiskResult};
-use crate::domain::value_objects::VenueId;
+use crate::domain::value_objects::{CounterpartyId, VenueId};
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -240,6 +240,279 @@ impl LastLookService for MockLastLookService {
                 LastLookResult::Timeout { .. } => entry.record_timeout(),
             }
         }
+    }
+}
+
+// ============================================================================
+// Mock implementations for Off-Book Execution services
+// ============================================================================
+
+use crate::domain::entities::block_trade::BlockTrade;
+use crate::domain::events::TradeHash;
+use crate::domain::services::ReportingTier;
+use crate::domain::services::collateral_lock::{CollateralLockHandle, CollateralLockService};
+use crate::domain::services::position_service::{Position, PositionUpdateService};
+use crate::domain::services::report_scheduler::{
+    ReportScheduler, ReportSchedulerConfig, ScheduledReport,
+};
+use crate::domain::services::settlement::{Fees, SettlementResult, SettlementService};
+use crate::domain::value_objects::{Instrument, Price as VoPrice};
+
+/// Mock implementation of [`CollateralLockService`] for testing.
+#[derive(Debug)]
+pub struct MockCollateralLockService {
+    should_pass: Mutex<bool>,
+    failure_reason: Mutex<Option<String>>,
+}
+
+impl MockCollateralLockService {
+    /// Creates a mock that always succeeds.
+    #[must_use]
+    pub fn passing() -> Self {
+        Self {
+            should_pass: Mutex::new(true),
+            failure_reason: Mutex::new(None),
+        }
+    }
+
+    /// Creates a mock that always fails.
+    #[must_use]
+    pub fn failing(reason: impl Into<String>) -> Self {
+        Self {
+            should_pass: Mutex::new(false),
+            failure_reason: Mutex::new(Some(reason.into())),
+        }
+    }
+}
+
+impl Default for MockCollateralLockService {
+    fn default() -> Self {
+        Self::passing()
+    }
+}
+
+#[async_trait]
+impl CollateralLockService for MockCollateralLockService {
+    async fn lock_both(
+        &self,
+        buyer_id: &CounterpartyId,
+        seller_id: &CounterpartyId,
+        _instrument: &Instrument,
+        _quantity: crate::domain::value_objects::Quantity,
+        _price: VoPrice,
+    ) -> DomainResult<CollateralLockHandle> {
+        let should_pass = self.should_pass.lock().map(|g| *g).unwrap_or(true);
+        if should_pass {
+            Ok(CollateralLockHandle::new(
+                buyer_id.clone(),
+                seller_id.clone(),
+                Decimal::new(10000, 2),
+                Decimal::new(10000, 2),
+            ))
+        } else {
+            let reason = self
+                .failure_reason
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+                .unwrap_or_else(|| "Mock collateral lock failure".to_string());
+            Err(crate::domain::errors::DomainError::CollateralLockFailed(
+                reason,
+            ))
+        }
+    }
+
+    async fn release(&self, _lock: &CollateralLockHandle) -> DomainResult<()> {
+        Ok(())
+    }
+
+    async fn check_available(
+        &self,
+        _counterparty_id: &CounterpartyId,
+        _required_amount: Decimal,
+    ) -> DomainResult<Decimal> {
+        Ok(Decimal::new(100000, 2))
+    }
+}
+
+/// Mock implementation of [`SettlementService`] for testing.
+#[derive(Debug)]
+pub struct MockSettlementService {
+    should_pass: Mutex<bool>,
+    price_bounds_ok: Mutex<bool>,
+}
+
+impl MockSettlementService {
+    /// Creates a mock that always succeeds.
+    #[must_use]
+    pub fn passing() -> Self {
+        Self {
+            should_pass: Mutex::new(true),
+            price_bounds_ok: Mutex::new(true),
+        }
+    }
+
+    /// Creates a mock that fails settlement.
+    #[must_use]
+    pub fn failing() -> Self {
+        Self {
+            should_pass: Mutex::new(false),
+            price_bounds_ok: Mutex::new(true),
+        }
+    }
+
+    /// Creates a mock that fails price bounds check.
+    #[must_use]
+    pub fn price_bounds_fail() -> Self {
+        Self {
+            should_pass: Mutex::new(true),
+            price_bounds_ok: Mutex::new(false),
+        }
+    }
+}
+
+impl Default for MockSettlementService {
+    fn default() -> Self {
+        Self::passing()
+    }
+}
+
+#[async_trait]
+impl SettlementService for MockSettlementService {
+    async fn settle(&self, trade: &BlockTrade) -> DomainResult<SettlementResult> {
+        let should_pass = self.should_pass.lock().map(|g| *g).unwrap_or(true);
+        if should_pass {
+            Ok(SettlementResult::new(
+                TradeHash::new(format!("0x{}", trade.id())),
+                crate::domain::value_objects::Timestamp::now(),
+                trade.quantity().get(),
+                -trade.quantity().get(),
+                Fees::zero(),
+            ))
+        } else {
+            Err(crate::domain::errors::DomainError::SettlementFailed(
+                "Mock settlement failure".to_string(),
+            ))
+        }
+    }
+
+    async fn verify_price_bounds(&self, _trade: &BlockTrade) -> DomainResult<bool> {
+        Ok(self.price_bounds_ok.lock().map(|g| *g).unwrap_or(true))
+    }
+
+    async fn get_oracle_price(&self, _instrument_symbol: &str) -> DomainResult<VoPrice> {
+        VoPrice::new(50000.0)
+            .map_err(|e| crate::domain::errors::DomainError::ValidationError(e.to_string()))
+    }
+}
+
+/// Mock implementation of [`PositionUpdateService`] for testing.
+#[derive(Debug, Default)]
+pub struct MockPositionUpdateService {
+    should_pass: Mutex<bool>,
+}
+
+impl MockPositionUpdateService {
+    /// Creates a mock that always succeeds.
+    #[must_use]
+    pub fn passing() -> Self {
+        Self {
+            should_pass: Mutex::new(true),
+        }
+    }
+
+    /// Creates a mock that always fails.
+    #[must_use]
+    pub fn failing() -> Self {
+        Self {
+            should_pass: Mutex::new(false),
+        }
+    }
+}
+
+#[async_trait]
+impl PositionUpdateService for MockPositionUpdateService {
+    async fn update_both(
+        &self,
+        _trade: &BlockTrade,
+        _settlement: &SettlementResult,
+    ) -> DomainResult<()> {
+        let should_pass = self.should_pass.lock().map(|g| *g).unwrap_or(true);
+        if should_pass {
+            Ok(())
+        } else {
+            Err(crate::domain::errors::DomainError::PositionUpdateFailed(
+                "Mock position update failure".to_string(),
+            ))
+        }
+    }
+
+    async fn get_position(
+        &self,
+        counterparty_id: &CounterpartyId,
+        instrument_symbol: &str,
+    ) -> DomainResult<Option<Position>> {
+        Ok(Some(Position::new(
+            counterparty_id.clone(),
+            instrument_symbol.to_string(),
+            Decimal::ZERO,
+            Decimal::ZERO,
+        )))
+    }
+}
+
+/// Mock implementation of [`ReportScheduler`] for testing.
+#[derive(Debug)]
+pub struct MockReportScheduler {
+    config: ReportSchedulerConfig,
+}
+
+impl MockReportScheduler {
+    /// Creates a new mock report scheduler.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            config: ReportSchedulerConfig::default(),
+        }
+    }
+}
+
+impl Default for MockReportScheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl ReportScheduler for MockReportScheduler {
+    async fn schedule(&self, trade: &BlockTrade) -> DomainResult<ScheduledReport> {
+        let tier = trade.reporting_tier().unwrap_or(ReportingTier::Standard);
+        let delay = self.delay_for_tier(tier);
+        let publish_at = crate::domain::value_objects::Timestamp::now()
+            .add_secs(delay.as_secs().try_into().unwrap_or(i64::MAX));
+
+        Ok(ScheduledReport::new(
+            trade.id().to_string(),
+            tier,
+            publish_at,
+        ))
+    }
+
+    fn delay_for_tier(&self, tier: ReportingTier) -> Duration {
+        self.config.delay_for_tier(tier)
+    }
+
+    async fn publish(&self, report: &mut ScheduledReport) -> DomainResult<()> {
+        report.mark_published();
+        Ok(())
+    }
+
+    async fn get_pending(&self) -> DomainResult<Vec<ScheduledReport>> {
+        Ok(Vec::new())
+    }
+
+    async fn process_ready(&self) -> DomainResult<usize> {
+        Ok(0)
     }
 }
 
