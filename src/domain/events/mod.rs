@@ -23,6 +23,16 @@
 //! - [`SettlementConfirmed`]: Settlement completed successfully
 //! - [`SettlementFailed`]: Settlement failed
 //!
+//! ## Block Trade Events
+//!
+//! - [`BlockTradeSubmitted`]: Block trade submitted for validation
+//! - [`BlockTradeValidated`]: Block trade validation completed
+//! - [`BlockTradeConfirmed`]: Counterparty confirmed block trade
+//! - [`BlockTradeApproved`]: Block trade approved (both parties confirmed)
+//! - [`BlockTradeRejected`]: Block trade rejected
+//! - [`BlockTradeExecuted`]: Block trade executed
+//! - [`BlockTradeFailed`]: Block trade execution failed
+//!
 //! ## Acceptance Events
 //!
 //! - [`QuoteLocked`]: Quote locked for acceptance
@@ -42,6 +52,7 @@
 
 pub mod acceptance_events;
 pub mod allocation_events;
+pub mod block_trade_events;
 pub mod compliance_events;
 pub mod conflict_events;
 pub mod domain_event;
@@ -55,6 +66,10 @@ pub use acceptance_events::{
 };
 pub use allocation_events::{
     AllocationEvent, AllocationExecuted, AllocationRolledBack, MultiMmFillAllocated,
+};
+pub use block_trade_events::{
+    BlockTradeApproved, BlockTradeConfirmed, BlockTradeExecuted, BlockTradeFailed,
+    BlockTradeRejected, BlockTradeRole, BlockTradeSubmitted, BlockTradeValidated,
 };
 pub use compliance_events::{
     ComplianceCheckFailed, ComplianceCheckPassed, ComplianceCheckType, ComplianceEvent,
