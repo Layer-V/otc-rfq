@@ -99,7 +99,7 @@ impl TheoreticalPricer {
     /// Interpolates implied volatility for a target strike.
     ///
     /// Uses linear interpolation between the two nearest strikes.
-    /// For strikes outside the range, uses the nearest IV with a decay factor.
+    /// For strikes outside the range, uses the nearest IV.
     fn interpolate_iv(strike: Price, nearby_ivs: &[(Price, f64)]) -> Result<f64, DomainError> {
         if nearby_ivs.is_empty() {
             return Err(DomainError::ValidationError(
@@ -107,16 +107,22 @@ impl TheoreticalPricer {
             ));
         }
 
+        // Convert strike to f64, propagating error if conversion fails
+        let strike_f64 = strike.get().to_f64().ok_or_else(|| {
+            DomainError::ValidationError("Failed to convert strike price to f64".to_string())
+        })?;
+
         // Sort by distance from target strike
-        let mut sorted: Vec<_> = nearby_ivs
-            .iter()
-            .map(|(s, iv)| {
-                let s_f64 = s.get().to_f64().unwrap_or(0.0);
-                let strike_f64 = strike.get().to_f64().unwrap_or(0.0);
-                let distance = (s_f64 - strike_f64).abs();
-                (distance, *s, *iv)
-            })
-            .collect();
+        let mut sorted: Vec<_> = Vec::with_capacity(nearby_ivs.len());
+        for (s, iv) in nearby_ivs {
+            let s_f64 = s.get().to_f64().ok_or_else(|| {
+                DomainError::ValidationError(
+                    "Failed to convert reference strike to f64".to_string(),
+                )
+            })?;
+            let distance = (s_f64 - strike_f64).abs();
+            sorted.push((distance, *s, *iv));
+        }
         sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         if sorted.len() == 1 {
@@ -137,9 +143,13 @@ impl TheoreticalPricer {
         let (_, s2, iv2) = *second;
 
         // Check if we're between the two nearest points
-        let strike_val = strike.get().to_f64().unwrap_or(0.0);
-        let s1_val = s1.get().to_f64().unwrap_or(0.0);
-        let s2_val = s2.get().to_f64().unwrap_or(0.0);
+        let strike_val = strike_f64;
+        let s1_val = s1.get().to_f64().ok_or_else(|| {
+            DomainError::ValidationError("Failed to convert s1 strike to f64".to_string())
+        })?;
+        let s2_val = s2.get().to_f64().ok_or_else(|| {
+            DomainError::ValidationError("Failed to convert s2 strike to f64".to_string())
+        })?;
 
         let (lower, upper, lower_iv, upper_iv) = if s1_val < s2_val {
             (s1_val, s2_val, iv1, iv2)
@@ -168,7 +178,6 @@ impl TheoreticalPricer {
     /// Computes Black-Scholes option price.
     ///
     /// Simplified Black-Scholes formula for European options.
-    #[allow(clippy::too_many_arguments)]
     fn black_scholes(
         spot: f64,
         strike: f64,
@@ -186,15 +195,6 @@ impl TheoreticalPricer {
         let sqrt_time = time.sqrt();
         let vol_sqrt_time = volatility * sqrt_time;
 
-        if vol_sqrt_time == 0.0 {
-            // Zero volatility edge case
-            return Ok(if is_call {
-                (spot - strike * (-rate * time).exp()).max(0.0)
-            } else {
-                (strike * (-rate * time).exp() - spot).max(0.0)
-            });
-        }
-
         let d1 =
             ((spot / strike).ln() + (rate + 0.5 * volatility * volatility) * time) / vol_sqrt_time;
         let d2 = d1 - vol_sqrt_time;
@@ -204,6 +204,13 @@ impl TheoreticalPricer {
         } else {
             strike * (-rate * time).exp() * Self::norm_cdf(-d2) - spot * Self::norm_cdf(-d1)
         };
+
+        // Guard against NaN propagation from extreme inputs
+        if !price.is_finite() {
+            return Err(DomainError::ValidationError(
+                "Black-Scholes produced non-finite result".to_string(),
+            ));
+        }
 
         Ok(price.max(0.0))
     }
@@ -263,8 +270,8 @@ impl TheoreticalPricer {
         };
 
         // Time penalty - longer expiries are less predictable
-        // Decay with half-life of 1 year
-        let time_score = (-time_to_expiry / 365.0).exp();
+        // Exponential decay: 1-year expiry gives score of ~0.37
+        let time_score = (-time_to_expiry).exp();
 
         // Data quality - more reference points = higher confidence
         let data_score = (nearby_ivs.len() as f64 / 10.0).min(1.0);
