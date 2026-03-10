@@ -24,6 +24,7 @@ pub mod market_calendar;
 pub mod mm_performance;
 pub mod off_book_executor;
 pub mod position_service;
+pub mod price_discovery_service;
 pub mod quote_lock;
 // pub mod quote_aggregator; // TODO: Module not yet implemented
 pub mod report_publisher;
@@ -57,6 +58,9 @@ pub use market_calendar::{
 };
 pub use off_book_executor::{ExecutedBlockTrade, OffBookExecutor, OffBookExecutorConfig};
 pub use position_service::{Position, PositionUpdateService};
+pub use price_discovery_service::{
+    LiquidityMetrics, PriceDiscoveryConfig, PriceDiscoveryService,
+};
 pub use report_publisher::{PublishResult, ReportPublisher};
 pub use report_scheduler::{ReportScheduler, ReportSchedulerConfig, ScheduledReport};
 pub use settlement::{Fees, SettlementResult, SettlementService};
