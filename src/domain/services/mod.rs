@@ -20,10 +20,12 @@ pub mod block_trade_service;
 pub mod collateral_lock;
 pub mod conflict_resolver;
 pub mod last_look;
+pub mod market_calendar;
 pub mod mm_performance;
 pub mod off_book_executor;
 pub mod position_service;
 pub mod quote_lock;
+pub mod report_publisher;
 pub mod report_scheduler;
 pub mod risk_check;
 pub mod settlement;
@@ -48,7 +50,11 @@ pub use quote_lock::{LockHolderId, QuoteLock, QuoteLockConfig, QuoteLockService}
 pub use risk_check::{RiskCheckConfig, RiskCheckService, RiskResult};
 
 pub use collateral_lock::{CollateralLockHandle, CollateralLockService};
+pub use market_calendar::{
+    MarketCalendarConfig, delay_until_market_close, next_market_close, next_market_close_default,
+};
 pub use off_book_executor::{ExecutedBlockTrade, OffBookExecutor, OffBookExecutorConfig};
 pub use position_service::{Position, PositionUpdateService};
+pub use report_publisher::{PublishResult, ReportPublisher};
 pub use report_scheduler::{ReportScheduler, ReportSchedulerConfig, ScheduledReport};
 pub use settlement::{Fees, SettlementResult, SettlementService};

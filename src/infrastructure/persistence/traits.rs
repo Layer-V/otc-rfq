@@ -396,6 +396,89 @@ pub trait CounterpartyRepository: Send + Sync + fmt::Debug {
     async fn count_active(&self) -> RepositoryResult<u64>;
 }
 
+/// Repository for delayed trade reports.
+///
+/// Provides persistence operations for delayed report entities,
+/// ensuring reports survive process restarts.
+///
+/// # Examples
+///
+/// ```ignore
+/// use otc_rfq::infrastructure::persistence::traits::DelayedReportRepository;
+///
+/// async fn example(repo: &impl DelayedReportRepository) {
+///     // Get reports ready to publish
+///     let ready = repo.find_ready_to_publish(Timestamp::now()).await?;
+///     
+///     // Mark as published
+///     for report in ready {
+///         repo.mark_published(&report.id(), Timestamp::now()).await?;
+///     }
+/// }
+/// ```
+#[async_trait]
+pub trait DelayedReportRepository: Send + Sync + fmt::Debug {
+    /// Saves a delayed report.
+    ///
+    /// If the report already exists (by ID), it will be updated.
+    async fn save(
+        &self,
+        report: &crate::domain::entities::delayed_report::DelayedReport,
+    ) -> RepositoryResult<()>;
+
+    /// Gets a delayed report by ID.
+    ///
+    /// Returns `None` if the report does not exist.
+    async fn find_by_id(
+        &self,
+        id: &uuid::Uuid,
+    ) -> RepositoryResult<Option<crate::domain::entities::delayed_report::DelayedReport>>;
+
+    /// Gets a delayed report by trade ID.
+    ///
+    /// Returns `None` if no report exists for the trade.
+    async fn find_by_trade_id(
+        &self,
+        trade_id: &str,
+    ) -> RepositoryResult<Option<crate::domain::entities::delayed_report::DelayedReport>>;
+
+    /// Finds all pending (unpublished) reports.
+    async fn find_pending(
+        &self,
+    ) -> RepositoryResult<Vec<crate::domain::entities::delayed_report::DelayedReport>>;
+
+    /// Finds reports that are ready to be published.
+    ///
+    /// A report is ready when its `publish_at` time has passed
+    /// and it has not yet been published.
+    async fn find_ready_to_publish(
+        &self,
+        now: crate::domain::value_objects::Timestamp,
+    ) -> RepositoryResult<Vec<crate::domain::entities::delayed_report::DelayedReport>>;
+
+    /// Marks a report as published.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotFound` if the report does not exist.
+    async fn mark_published(
+        &self,
+        id: &uuid::Uuid,
+        published_at: crate::domain::value_objects::Timestamp,
+    ) -> RepositoryResult<()>;
+
+    /// Deletes a report by ID.
+    ///
+    /// Returns `Ok(true)` if the report was deleted, `Ok(false)` if it didn't exist.
+    async fn delete(&self, id: &uuid::Uuid) -> RepositoryResult<bool>;
+
+    /// Counts all reports.
+    async fn count(&self) -> RepositoryResult<u64>;
+
+    /// Counts pending reports.
+    async fn count_pending(&self) -> RepositoryResult<u64>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

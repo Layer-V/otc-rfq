@@ -58,6 +58,7 @@ pub mod conflict_events;
 pub mod domain_event;
 pub mod negotiation_events;
 pub mod off_book_events;
+pub mod reporting_events;
 pub mod rfq_events;
 pub mod trade_events;
 
@@ -85,6 +86,7 @@ pub use off_book_events::{
     CollateralLocked, CollateralReleased, ExecutionStep, OffBookExecutionStarted, OffBookFailed,
     OffBookSettled, TradeHash,
 };
+pub use reporting_events::{BlockTradeReported, ReportScheduled};
 pub use rfq_events::{
     ExecutionFailed, ExecutionStarted, QuoteCollectionCompleted, QuoteCollectionStarted,
     QuoteReceived, QuoteRequestFailed, QuoteRequested, QuoteSelected, RfqCancelled, RfqCreated,
