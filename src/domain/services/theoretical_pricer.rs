@@ -121,11 +121,20 @@ impl TheoreticalPricer {
 
         if sorted.len() == 1 {
             // Only one reference point - use it directly
-            return Ok(sorted[0].2.max(0.01)); // Minimum 1% IV
+            let first = sorted.first().ok_or_else(|| {
+                DomainError::ValidationError("No reference IVs available".to_string())
+            })?;
+            return Ok(first.2.max(0.01)); // Minimum 1% IV
         }
 
-        let (_, s1, iv1) = sorted[0];
-        let (_, s2, iv2) = sorted[1];
+        let first = sorted.first().ok_or_else(|| {
+            DomainError::ValidationError("No reference IVs available".to_string())
+        })?;
+        let second = sorted.get(1).ok_or_else(|| {
+            DomainError::ValidationError("Need at least 2 reference IVs".to_string())
+        })?;
+        let (_, s1, iv1) = *first;
+        let (_, s2, iv2) = *second;
 
         // Check if we're between the two nearest points
         let strike_val = strike.get().to_f64().unwrap_or(0.0);
@@ -272,6 +281,7 @@ impl Default for TheoreticalPricer {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

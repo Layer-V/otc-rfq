@@ -153,6 +153,11 @@ impl PriceDiscoveryService {
     /// # Returns
     ///
     /// Theoretical price and event.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if theoretical pricing fails (insufficient IVs, invalid params).
+    #[allow(clippy::too_many_arguments)]
     pub fn compute_theoretical_price(
         &self,
         rfq_id: RfqId,
@@ -195,6 +200,10 @@ impl PriceDiscoveryService {
     /// # Returns
     ///
     /// (bid_price, ask_price) with widened spread.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if price conversion fails or resulting prices are invalid.
     pub fn apply_spread_widening(
         &self,
         base_price: Price,
@@ -238,6 +247,7 @@ impl Default for PriceDiscoveryService {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::domain::value_objects::{AssetClass, SettlementMethod, Symbol};
