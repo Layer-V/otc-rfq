@@ -113,7 +113,7 @@ impl PartialEq for ResourceLock {
         match (self, other) {
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Account(a), Self::Account(b)) => a == b,
-            (Self::Instrument(a), Self::Instrument(b)) => a.symbol() == b.symbol(),
+            (Self::Instrument(a), Self::Instrument(b)) => a == b,
             _ => false,
         }
     }
@@ -122,7 +122,15 @@ impl PartialEq for ResourceLock {
 impl Hash for ResourceLock {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.category().hash(state);
-        self.sort_key().hash(state);
+        match self {
+            Self::Quote(id) => id.hash(state),
+            Self::Account(id) => id.hash(state),
+            Self::Instrument(inst) => {
+                inst.symbol().hash(state);
+                inst.asset_class().hash(state);
+                inst.settlement_method().hash(state);
+            }
+        }
     }
 }
 

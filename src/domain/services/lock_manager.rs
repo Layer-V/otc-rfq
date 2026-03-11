@@ -199,15 +199,17 @@ impl LockGuard {
 impl Drop for LockGuard {
     fn drop(&mut self) {
         if !self.released {
-            // Spawn a task to release locks asynchronously
+            // Spawn a task to release locks asynchronously when a Tokio runtime is available
             let locks = std::mem::take(&mut self.locks);
             let holder_id = self.holder_id;
             let lock_manager = Arc::clone(&self.lock_manager);
             self.released = true;
 
-            tokio::spawn(async move {
-                let _ = lock_manager.release_all(&locks, holder_id).await;
-            });
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move {
+                    let _ = lock_manager.release_all(&locks, holder_id).await;
+                });
+            }
         }
     }
 }
@@ -287,31 +289,39 @@ pub trait LockManager: Send + Sync + fmt::Debug {
 ///
 /// Suitable for single-instance deployments or testing.
 /// For multi-instance deployments, use a Redis-based implementation.
+///
+/// This implementation must be wrapped in `Arc` and used via `Arc<InMemoryLockManager>`
+/// to ensure proper lock release through the `LockGuard`.
 #[derive(Debug)]
 pub struct InMemoryLockManager {
     /// Active locks by resource.
     locks: RwLock<HashMap<String, LockInfo>>,
     /// Configuration.
     config: LockManagerConfig,
-    /// Holder ID for this instance.
-    holder_id: LockHolderId,
 }
 
 impl InMemoryLockManager {
-    /// Creates a new in-memory lock manager.
+    /// Creates a new in-memory lock manager wrapped in Arc.
     #[must_use]
-    pub fn new(config: LockManagerConfig) -> Self {
+    pub fn new(config: LockManagerConfig) -> Arc<Self> {
+        Arc::new(Self {
+            locks: RwLock::new(HashMap::new()),
+            config,
+        })
+    }
+
+    /// Creates a new lock manager with default configuration wrapped in Arc.
+    #[must_use]
+    pub fn with_defaults() -> Arc<Self> {
+        Self::new(LockManagerConfig::default())
+    }
+
+    /// Creates a raw instance (for internal use).
+    fn new_raw(config: LockManagerConfig) -> Self {
         Self {
             locks: RwLock::new(HashMap::new()),
             config,
-            holder_id: LockHolderId::new(),
         }
-    }
-
-    /// Creates a new lock manager with default configuration.
-    #[must_use]
-    pub fn with_defaults() -> Self {
-        Self::new(LockManagerConfig::default())
     }
 
     /// Returns a key for the lock map.
@@ -346,6 +356,10 @@ impl InMemoryLockManager {
     }
 
     /// Releases a single lock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the lock is held by a different, non-expired holder.
     async fn release_one(
         &self,
         resource: &ResourceLock,
@@ -354,12 +368,19 @@ impl InMemoryLockManager {
         let key = Self::lock_key(resource);
         let mut locks = self.locks.write().await;
 
-        if let Some(existing) = locks.get(&key)
-            && (existing.holder_id == holder_id || existing.is_expired())
-        {
-            locks.remove(&key);
+        if let Some(existing) = locks.get(&key) {
+            if existing.holder_id == holder_id || existing.is_expired() {
+                locks.remove(&key);
+                Ok(())
+            } else {
+                Err(DomainError::LockAcquisitionFailed(format!(
+                    "cannot release resource {}: lock is held by a different holder",
+                    resource
+                )))
+            }
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 
     /// Cleans up expired locks.
@@ -369,44 +390,75 @@ impl InMemoryLockManager {
     }
 }
 
+/// Wrapper that holds Arc<InMemoryLockManager> and implements LockManager.
+/// This allows proper Arc sharing for LockGuard release.
+#[derive(Debug, Clone)]
+pub struct SharedLockManager {
+    inner: Arc<InMemoryLockManager>,
+}
+
+impl SharedLockManager {
+    /// Creates a new shared lock manager.
+    #[must_use]
+    pub fn new(config: LockManagerConfig) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::new(InMemoryLockManager::new_raw(config)),
+        })
+    }
+
+    /// Creates a new shared lock manager with default configuration.
+    #[must_use]
+    pub fn with_defaults() -> Arc<Self> {
+        Self::new(LockManagerConfig::default())
+    }
+}
+
 #[async_trait]
-impl LockManager for InMemoryLockManager {
+impl LockManager for SharedLockManager {
     async fn acquire_all(
         &self,
         resources: Vec<ResourceLock>,
         timeout: Duration,
     ) -> DomainResult<LockGuard> {
+        // Generate a unique holder_id for this acquisition
+        let holder_id = LockHolderId::new();
+
         if resources.is_empty() {
-            return Ok(LockGuard::new(
-                vec![],
-                self.holder_id,
-                Arc::new(Self::with_defaults()),
-            ));
+            // Create a dummy guard - we need a reference to self as Arc<dyn LockManager>
+            // This is handled by the caller wrapping SharedLockManager in Arc
+            return Ok(LockGuard {
+                locks: vec![],
+                holder_id,
+                lock_manager: Arc::new(Self {
+                    inner: Arc::clone(&self.inner),
+                }),
+                released: true, // Empty guard, nothing to release
+            });
         }
 
         // Sort locks to ensure deterministic ordering
         let mut sorted_resources = resources;
         sort_locks(&mut sorted_resources);
 
-        let effective_timeout = self.config.effective_timeout(Some(timeout));
+        let effective_timeout = self.inner.config.effective_timeout(Some(timeout));
         let deadline = tokio::time::Instant::now() + effective_timeout;
         let mut acquired: Vec<ResourceLock> = Vec::with_capacity(sorted_resources.len());
 
         for resource in &sorted_resources {
             loop {
-                match self.try_acquire_one(resource, self.holder_id).await {
+                match self.inner.try_acquire_one(resource, holder_id).await {
                     Ok(()) => {
                         acquired.push(resource.clone());
                         break;
                     }
                     Err(_) if tokio::time::Instant::now() < deadline => {
                         // Retry after interval
-                        tokio::time::sleep(self.config.retry_interval).await;
+                        tokio::time::sleep(self.inner.config.retry_interval).await;
                     }
                     Err(e) => {
                         // Timeout or error - release all acquired locks
                         for acq in &acquired {
-                            let _ = self.release_one(acq, self.holder_id).await;
+                            let _ = self.inner.release_one(acq, holder_id).await;
                         }
                         return Err(DomainError::LockAcquisitionFailed(format!(
                             "failed to acquire lock on {}: {}",
@@ -417,16 +469,12 @@ impl LockManager for InMemoryLockManager {
             }
         }
 
-        // Create a self-referential guard - we need to use a workaround
-        // Since we can't easily create Arc<Self> from &self, we create a new manager
-        // that shares the same state. For production, this would use Arc<Self>.
+        // Create guard with a clone of self that shares the same inner state
         Ok(LockGuard {
             locks: acquired,
-            holder_id: self.holder_id,
-            lock_manager: Arc::new(InMemoryLockManager {
-                locks: RwLock::new(HashMap::new()), // Placeholder - release handled separately
-                config: self.config,
-                holder_id: self.holder_id,
+            holder_id,
+            lock_manager: Arc::new(Self {
+                inner: Arc::clone(&self.inner),
             }),
             released: false,
         })
@@ -439,25 +487,20 @@ impl LockManager for InMemoryLockManager {
     ) -> DomainResult<()> {
         // Release in reverse order
         for resource in locks.iter().rev() {
-            self.release_one(resource, holder_id).await?;
+            self.inner.release_one(resource, holder_id).await?;
         }
         Ok(())
     }
 
     async fn get_lock_info(&self, resource: &ResourceLock) -> Option<LockInfo> {
-        let key = Self::lock_key(resource);
-        let locks = self.locks.read().await;
+        let key = InMemoryLockManager::lock_key(resource);
+        let locks = self.inner.locks.read().await;
         locks.get(&key).filter(|info| !info.is_expired()).cloned()
     }
 
     fn holder_id(&self) -> LockHolderId {
-        self.holder_id
-    }
-}
-
-impl Default for InMemoryLockManager {
-    fn default() -> Self {
-        Self::with_defaults()
+        // Returns a new holder_id each time since we generate per-acquisition
+        LockHolderId::new()
     }
 }
 
@@ -531,8 +574,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_lock_manager_acquire_single() {
-        let manager = InMemoryLockManager::with_defaults();
+    async fn shared_lock_manager_acquire_single() {
+        let manager = SharedLockManager::with_defaults();
         let resource = ResourceLock::Quote(QuoteId::new_v4());
 
         let guard = manager
@@ -549,8 +592,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_lock_manager_acquire_multiple() {
-        let manager = InMemoryLockManager::with_defaults();
+    async fn shared_lock_manager_acquire_multiple() {
+        let manager = SharedLockManager::with_defaults();
         let resources = vec![
             ResourceLock::Quote(QuoteId::new_v4()),
             ResourceLock::Account(CounterpartyId::new("client")),
@@ -567,8 +610,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_lock_manager_acquire_empty() {
-        let manager = InMemoryLockManager::with_defaults();
+    async fn shared_lock_manager_acquire_empty() {
+        let manager = SharedLockManager::with_defaults();
 
         let guard = manager
             .acquire_all(vec![], Duration::from_millis(100))
@@ -579,21 +622,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_lock_manager_release() {
-        let manager = InMemoryLockManager::with_defaults();
+    async fn shared_lock_manager_release_via_guard() {
+        let manager = SharedLockManager::with_defaults();
         let resource = ResourceLock::Quote(QuoteId::new_v4());
 
         // Acquire
-        let _guard = manager
+        let guard = manager
             .acquire_all(vec![resource.clone()], Duration::from_millis(100))
             .await
             .unwrap();
 
-        // Release
-        manager
-            .release_all(std::slice::from_ref(&resource), manager.holder_id())
-            .await
-            .unwrap();
+        // Verify lock is held
+        let info = manager.get_lock_info(&resource).await;
+        assert!(info.is_some());
+
+        // Release via guard
+        guard.release().await.unwrap();
 
         // Verify released
         let info = manager.get_lock_info(&resource).await;
@@ -601,14 +645,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn in_memory_lock_manager_contention_timeout() {
-        // Test that same manager can't acquire same lock twice with different holder
-        // (simulating contention scenario)
-        let manager = InMemoryLockManager::with_defaults();
+    async fn shared_lock_manager_contention() {
+        // Test that concurrent acquisitions on same resource cause contention
+        let manager = SharedLockManager::with_defaults();
         let resource = ResourceLock::Quote(QuoteId::new_v4());
 
         // First acquisition succeeds
-        let guard1 = manager
+        let _guard1 = manager
             .acquire_all(vec![resource.clone()], Duration::from_millis(50))
             .await
             .unwrap();
@@ -617,19 +660,18 @@ mod tests {
         let info = manager.get_lock_info(&resource).await;
         assert!(info.is_some());
 
-        // Same holder can re-acquire (idempotent)
-        let guard2 = manager
+        // Second acquisition should timeout (different holder_id generated)
+        let result = manager
             .acquire_all(vec![resource.clone()], Duration::from_millis(20))
             .await;
-        assert!(guard2.is_ok());
 
-        // Release first guard
-        drop(guard1);
+        // Should fail due to contention
+        assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn lock_guard_debug() {
-        let manager = InMemoryLockManager::with_defaults();
+        let manager = SharedLockManager::with_defaults();
         let resource = ResourceLock::Quote(QuoteId::new_v4());
 
         let guard = manager
@@ -650,7 +692,7 @@ mod tests {
             lock_ttl: Duration::from_millis(10), // Very short TTL
             retry_interval: Duration::from_millis(5),
         };
-        let manager = InMemoryLockManager::new(config);
+        let manager = SharedLockManager::new(config);
         let resource = ResourceLock::Quote(QuoteId::new_v4());
 
         // Acquire lock
@@ -662,34 +704,38 @@ mod tests {
         // Wait for expiration
         tokio::time::sleep(Duration::from_millis(20)).await;
 
-        // Cleanup
-        manager.cleanup_expired().await;
-
-        // Lock should be gone
+        // Lock should be gone (expired)
         let info = manager.get_lock_info(&resource).await;
         assert!(info.is_none());
     }
 
     #[tokio::test]
-    async fn concurrent_lock_acquisition() {
+    async fn concurrent_lock_acquisition_shared_manager() {
+        // Test concurrent acquisition with SHARED manager - only one should succeed
+        let manager = SharedLockManager::with_defaults();
         let resource = ResourceLock::Quote(QuoteId::new_v4());
         let success_count = Arc::new(AtomicUsize::new(0));
+        let failure_count = Arc::new(AtomicUsize::new(0));
 
         let mut handles = vec![];
 
         for _ in 0..10 {
+            let mgr = Arc::clone(&manager);
             let res = resource.clone();
-            let count = Arc::clone(&success_count);
+            let success = Arc::clone(&success_count);
+            let failure = Arc::clone(&failure_count);
 
             handles.push(tokio::spawn(async move {
-                // Each task creates its own manager to get unique holder_id
-                let local_mgr = InMemoryLockManager::with_defaults();
-                if local_mgr
-                    .acquire_all(vec![res], Duration::from_millis(10))
-                    .await
-                    .is_ok()
-                {
-                    count.fetch_add(1, Ordering::SeqCst);
+                match mgr.acquire_all(vec![res], Duration::from_millis(5)).await {
+                    Ok(guard) => {
+                        success.fetch_add(1, Ordering::SeqCst);
+                        // Hold lock briefly
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                        let _ = guard.release().await;
+                    }
+                    Err(_) => {
+                        failure.fetch_add(1, Ordering::SeqCst);
+                    }
                 }
             }));
         }
@@ -698,7 +744,11 @@ mod tests {
             let _ = handle.await;
         }
 
-        // All should succeed since each has its own manager
-        assert_eq!(success_count.load(Ordering::SeqCst), 10);
+        // With short timeout and shared manager, most should fail due to contention
+        let successes = success_count.load(Ordering::SeqCst);
+        let failures = failure_count.load(Ordering::SeqCst);
+        assert!(successes >= 1, "At least one should succeed");
+        assert!(failures >= 1, "At least one should fail due to contention");
+        assert_eq!(successes + failures, 10);
     }
 }

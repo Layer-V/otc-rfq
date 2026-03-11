@@ -71,5 +71,5 @@ pub use settlement::{Fees, SettlementResult, SettlementService};
 pub use theoretical_pricer::TheoreticalPricer;
 
 pub use atomic_matcher::{AtomicExecutionResult, AtomicMatcher, AtomicMatcherConfig};
-pub use lock_manager::{InMemoryLockManager, LockGuard, LockInfo, LockManager, LockManagerConfig};
+pub use lock_manager::{LockGuard, LockInfo, LockManager, LockManagerConfig, SharedLockManager};
 pub use resource_lock::{ResourceLock, sort_locks};

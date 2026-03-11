@@ -44,15 +44,12 @@ use std::time::Duration;
 pub struct AtomicMatcherConfig {
     /// Timeout for acquiring all locks.
     pub lock_timeout: Duration,
-    /// Whether to emit domain events.
-    pub emit_events: bool,
 }
 
 impl Default for AtomicMatcherConfig {
     fn default() -> Self {
         Self {
             lock_timeout: Duration::from_millis(100),
-            emit_events: true,
         }
     }
 }
@@ -60,20 +57,14 @@ impl Default for AtomicMatcherConfig {
 impl AtomicMatcherConfig {
     /// Creates a new atomic matcher configuration.
     #[must_use]
-    pub fn new(lock_timeout: Duration, emit_events: bool) -> Self {
-        Self {
-            lock_timeout,
-            emit_events,
-        }
+    pub fn new(lock_timeout: Duration) -> Self {
+        Self { lock_timeout }
     }
 
     /// Creates a configuration with custom lock timeout.
     #[must_use]
     pub fn with_timeout(lock_timeout: Duration) -> Self {
-        Self {
-            lock_timeout,
-            ..Default::default()
-        }
+        Self { lock_timeout }
     }
 }
 
@@ -82,8 +73,8 @@ impl AtomicMatcherConfig {
 pub struct AtomicExecutionResult<T> {
     /// The result of the operation.
     pub result: T,
-    /// Time spent holding locks in milliseconds.
-    pub locks_held_ms: u64,
+    /// Time spent executing the operation (excluding lock acquisition) in milliseconds.
+    pub execution_time_ms: u64,
     /// Number of resources that were locked.
     pub resources_locked: usize,
 }
@@ -91,10 +82,10 @@ pub struct AtomicExecutionResult<T> {
 impl<T> AtomicExecutionResult<T> {
     /// Creates a new atomic execution result.
     #[must_use]
-    pub fn new(result: T, locks_held_ms: u64, resources_locked: usize) -> Self {
+    pub fn new(result: T, execution_time_ms: u64, resources_locked: usize) -> Self {
         Self {
             result,
-            locks_held_ms,
+            execution_time_ms,
             resources_locked,
         }
     }
@@ -173,7 +164,6 @@ impl AtomicMatcher {
         F: FnOnce() -> Fut,
         Fut: Future<Output = DomainResult<T>>,
     {
-        let start = std::time::Instant::now();
         let resources_count = resources.len();
 
         // Acquire all locks
@@ -182,23 +172,25 @@ impl AtomicMatcher {
             .acquire_all(resources, self.config.lock_timeout)
             .await?;
 
+        // Start timing AFTER locks are acquired (measures only execution time)
+        let exec_start = std::time::Instant::now();
+
         // Execute the operation
         let result = operation().await;
 
-        // Calculate lock hold time
-        let locks_held_ms = start.elapsed().as_millis() as u64;
+        // Calculate execution time (not including lock acquisition)
+        let execution_time_ms = exec_start.elapsed().as_millis() as u64;
 
-        // Release locks (guard will auto-release on drop, but we do it explicitly)
-        let _ = self
-            .lock_manager
-            .release_all(guard.locks(), guard.holder_id())
-            .await;
+        // Release locks via guard to avoid double-release
+        if let Err(e) = guard.release().await {
+            tracing::warn!("Failed to release locks: {:?}", e);
+        }
 
         // Return result
         match result {
             Ok(value) => Ok(AtomicExecutionResult::new(
                 value,
-                locks_held_ms,
+                execution_time_ms,
                 resources_count,
             )),
             Err(e) => Err(e),
@@ -295,7 +287,7 @@ mod tests {
     use super::*;
     use crate::domain::entities::rfq::RfqBuilder;
     use crate::domain::errors::DomainError;
-    use crate::domain::services::lock_manager::InMemoryLockManager;
+    use crate::domain::services::lock_manager::SharedLockManager;
     use crate::domain::value_objects::enums::{AssetClass, SettlementMethod};
     use crate::domain::value_objects::symbol::Symbol;
     use crate::domain::value_objects::{
@@ -335,14 +327,12 @@ mod tests {
     fn atomic_matcher_config_default() {
         let config = AtomicMatcherConfig::default();
         assert_eq!(config.lock_timeout, Duration::from_millis(100));
-        assert!(config.emit_events);
     }
 
     #[test]
     fn atomic_matcher_config_with_timeout() {
         let config = AtomicMatcherConfig::with_timeout(Duration::from_millis(200));
         assert_eq!(config.lock_timeout, Duration::from_millis(200));
-        assert!(config.emit_events);
     }
 
     #[test]
@@ -361,7 +351,7 @@ mod tests {
 
     #[tokio::test]
     async fn atomic_matcher_execute_success() {
-        let lock_manager = Arc::new(InMemoryLockManager::with_defaults());
+        let lock_manager = SharedLockManager::with_defaults();
         let matcher = AtomicMatcher::with_defaults(lock_manager);
 
         let rfq = create_test_rfq();
@@ -375,12 +365,12 @@ mod tests {
         let exec_result = result.unwrap();
         assert_eq!(exec_result.result, 42);
         assert_eq!(exec_result.resources_locked, 4);
-        assert!(exec_result.locks_held_ms < 1000);
+        assert!(exec_result.execution_time_ms < 1000);
     }
 
     #[tokio::test]
     async fn atomic_matcher_execute_failure_releases_locks() {
-        let lock_manager = Arc::new(InMemoryLockManager::with_defaults());
+        let lock_manager = SharedLockManager::with_defaults();
         let matcher = AtomicMatcher::with_defaults(lock_manager);
 
         let rfq = create_test_rfq();
@@ -397,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn atomic_matcher_are_resources_available() {
-        let lock_manager = Arc::new(InMemoryLockManager::with_defaults());
+        let lock_manager = SharedLockManager::with_defaults();
         let matcher = AtomicMatcher::with_defaults(lock_manager);
 
         let rfq = create_test_rfq();
@@ -410,13 +400,16 @@ mod tests {
         // Acquire locks
         let _guard = matcher.acquire_locks(resources.clone()).await.unwrap();
 
-        // Now not available (locks held by matcher)
+        // Now not available (locks held by different holder)
         assert!(!matcher.are_resources_available(&resources).await);
     }
 
     #[tokio::test]
-    async fn atomic_matcher_concurrent_execution() {
+    async fn atomic_matcher_concurrent_execution_shared_manager() {
+        // Test with SHARED manager - demonstrates contention
+        let lock_manager = SharedLockManager::with_defaults();
         let success_count = Arc::new(AtomicUsize::new(0));
+        let failure_count = Arc::new(AtomicUsize::new(0));
 
         let rfq = create_test_rfq();
         let quote = create_test_quote(&rfq);
@@ -424,26 +417,28 @@ mod tests {
         let mut handles = vec![];
 
         for _ in 0..10 {
-            let lock_manager = Arc::new(InMemoryLockManager::with_defaults());
+            let mgr = Arc::clone(&lock_manager);
             let matcher = AtomicMatcher::new(
-                lock_manager,
-                AtomicMatcherConfig::with_timeout(Duration::from_millis(20)),
+                mgr,
+                AtomicMatcherConfig::with_timeout(Duration::from_millis(10)),
             );
             let rfq_clone = rfq.clone();
             let quote_clone = quote.clone();
             let success = Arc::clone(&success_count);
+            let failure = Arc::clone(&failure_count);
 
             handles.push(tokio::spawn(async move {
                 let result = matcher
                     .execute_trade(&rfq_clone, &quote_clone, || async {
-                        tokio::time::sleep(Duration::from_millis(5)).await;
+                        tokio::time::sleep(Duration::from_millis(20)).await;
                         Ok(1)
                     })
                     .await;
 
-                if result.is_ok() {
-                    success.fetch_add(1, Ordering::SeqCst);
-                }
+                match result {
+                    Ok(_) => success.fetch_add(1, Ordering::SeqCst),
+                    Err(_) => failure.fetch_add(1, Ordering::SeqCst),
+                };
             }));
         }
 
@@ -451,8 +446,11 @@ mod tests {
             let _ = handle.await;
         }
 
-        // All should succeed since each has its own lock manager
-        assert_eq!(success_count.load(Ordering::SeqCst), 10);
+        // With shared manager and short timeout, expect contention
+        let successes = success_count.load(Ordering::SeqCst);
+        let failures = failure_count.load(Ordering::SeqCst);
+        assert!(successes >= 1, "At least one should succeed");
+        assert_eq!(successes + failures, 10);
     }
 
     #[tokio::test]
@@ -460,13 +458,13 @@ mod tests {
         let result = AtomicExecutionResult::new("test", 50, 3);
 
         assert_eq!(result.result, "test");
-        assert_eq!(result.locks_held_ms, 50);
+        assert_eq!(result.execution_time_ms, 50);
         assert_eq!(result.resources_locked, 3);
     }
 
     #[test]
     fn atomic_matcher_debug() {
-        let lock_manager = Arc::new(InMemoryLockManager::with_defaults());
+        let lock_manager = SharedLockManager::with_defaults();
         let matcher = AtomicMatcher::with_defaults(lock_manager);
 
         let debug_str = format!("{:?}", matcher);
