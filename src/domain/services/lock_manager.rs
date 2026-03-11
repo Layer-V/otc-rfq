@@ -390,8 +390,8 @@ impl InMemoryLockManager {
     }
 }
 
-/// Wrapper that holds Arc<InMemoryLockManager> and implements LockManager.
-/// This allows proper Arc sharing for LockGuard release.
+/// Wrapper that holds `Arc<InMemoryLockManager>` and implements `LockManager`.
+/// This allows proper Arc sharing for `LockGuard` release.
 #[derive(Debug, Clone)]
 pub struct SharedLockManager {
     inner: Arc<InMemoryLockManager>,
