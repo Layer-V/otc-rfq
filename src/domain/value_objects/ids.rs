@@ -381,6 +381,64 @@ impl AsRef<str> for VenueId {
     }
 }
 
+/// Package quote identifier.
+///
+/// A UUID-based identifier uniquely identifying a package quote for multi-leg strategies.
+///
+/// # Examples
+///
+/// ```
+/// use otc_rfq::domain::value_objects::ids::PackageQuoteId;
+///
+/// let pkg_id = PackageQuoteId::new_v4();
+/// println!("Package Quote: {}", pkg_id);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PackageQuoteId(Uuid);
+
+impl PackageQuoteId {
+    /// Creates a new Package Quote ID from an existing UUID.
+    #[inline]
+    #[must_use]
+    pub const fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Generates a new random Package Quote ID using UUID v4.
+    #[must_use]
+    pub fn new_v4() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Returns the inner UUID value.
+    #[inline]
+    #[must_use]
+    pub const fn get(self) -> Uuid {
+        self.0
+    }
+
+    /// Creates a Package Quote ID from a UUID reference.
+    #[inline]
+    #[must_use]
+    pub const fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl fmt::Display for PackageQuoteId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.hyphenated())
+    }
+}
+
+impl From<Uuid> for PackageQuoteId {
+    #[inline]
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
 /// Counterparty identifier.
 ///
 /// A string-based identifier for counterparties (clients, market makers, etc.).

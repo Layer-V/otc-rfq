@@ -64,7 +64,9 @@ mod tests;
 pub use arithmetic::{ArithmeticError, ArithmeticResult, CheckedArithmetic, Rounding, div_round};
 pub use compliance::{ComplianceCheckResults, ComplianceCheckResultsBuilder, RegulatoryFlag};
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
-pub use ids::{CounterpartyId, EventId, NegotiationId, QuoteId, RfqId, TradeId, VenueId};
+pub use ids::{
+    CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId, VenueId,
+};
 pub use instrument::{Instrument, InstrumentBuilder};
 pub use liquidity_classification::LiquidityClassification;
 pub use negotiation_state::{InvalidNegotiationStateError, NegotiationState};
