@@ -169,26 +169,25 @@ impl PackageQuoteValidator {
         };
 
         let quoted_net = quote.net_price();
-        let calculated_decimal = calculated_net.get();
 
         // Handle zero case to avoid division by zero
-        if calculated_decimal == Decimal::ZERO {
+        if calculated_net == Decimal::ZERO {
             if quoted_net == Decimal::ZERO {
                 return Ok(());
             } else {
                 return Err(DomainError::InvalidPackageQuote(format!(
                     "net price {} is inconsistent with calculated net {} from legs",
-                    quoted_net, calculated_decimal
+                    quoted_net, calculated_net
                 )));
             }
         }
 
-        let deviation_bps = self.calculate_decimal_deviation_bps(quoted_net, calculated_decimal);
+        let deviation_bps = self.calculate_decimal_deviation_bps(quoted_net, calculated_net);
 
         if deviation_bps > Decimal::from(self.tolerance_bps) {
             return Err(DomainError::InvalidPackageQuote(format!(
                 "net price {} deviates {}bps from calculated net {} (tolerance: {}bps)",
-                quoted_net, deviation_bps, calculated_decimal, self.tolerance_bps
+                quoted_net, deviation_bps, calculated_net, self.tolerance_bps
             )));
         }
 
@@ -314,12 +313,11 @@ mod tests {
         let result = validator.validate_leg_prices(&quote, &market_prices);
         assert!(result.is_ok());
 
-        // Full validate will fail on net_price_consistency because
-        // calculated_net_from_legs returns None (Price can't be negative)
-        // This is expected behavior - full validation requires all legs to have
-        // calculable signed notionals
+        // Full validate should now pass since signed_notional returns Decimal
+        // and can handle negative values for buy legs
+        // Net = -100 (buy) + 101 (sell) = 1 (matches the quote's net_price)
         let full_result = validator.validate(&quote, &market_prices);
-        assert!(full_result.is_err()); // Expected: fails on net price consistency
+        assert!(full_result.is_ok());
     }
 
     #[test]
@@ -412,14 +410,13 @@ mod tests {
             .unwrap(),
         ];
 
-        // Note: calculated_net_from_legs returns None for buy side due to Price limitations
-        // So this test validates the behavior when calculation fails
+        // Net = -100 (buy) + 101 (sell) = 1
         let quote = create_package_quote(leg_prices, Decimal::new(1, 0));
 
-        // is_consistent will return false because calculated_net_from_legs returns None
-        // This is expected behavior given Price cannot be negative
+        // is_consistent should return true since signed_notional now returns Decimal
+        // and can handle negative values for buy legs
         let result = validator.is_consistent(&quote);
-        assert!(!result); // Expected: false because signed_notional returns None for buy
+        assert!(result);
     }
 
     #[test]

@@ -171,13 +171,16 @@ impl LegPrice {
     ///
     /// - Buy: negative (cost to buyer)
     /// - Sell: positive (credit to buyer)
+    ///
+    /// Returns `Decimal` instead of `Price` because signed notional can be negative.
     #[must_use]
-    pub fn signed_notional(&self) -> Option<Price> {
+    pub fn signed_notional(&self) -> Option<Decimal> {
         let notional = self.notional()?;
-        match self.side {
-            OrderSide::Buy => notional.safe_mul(Decimal::NEGATIVE_ONE).ok(),
-            OrderSide::Sell => Some(notional),
-        }
+        let notional_value = notional.get();
+        Some(match self.side {
+            OrderSide::Buy => -notional_value,
+            OrderSide::Sell => notional_value,
+        })
     }
 }
 
@@ -456,12 +459,14 @@ impl PackageQuote {
     /// Calculates the sum of individual leg notionals.
     ///
     /// This can be compared with `net_price` to detect pricing discrepancies.
+    /// Returns `Decimal` instead of `Price` because the sum can be negative
+    /// (credit strategies).
     #[must_use]
-    pub fn calculated_net_from_legs(&self) -> Option<Price> {
-        let mut total = Price::zero();
+    pub fn calculated_net_from_legs(&self) -> Option<Decimal> {
+        let mut total = Decimal::ZERO;
         for leg in &self.leg_prices {
             let signed = leg.signed_notional()?;
-            total = total.safe_add(signed).ok()?;
+            total += signed;
         }
         Some(total)
     }
@@ -662,11 +667,10 @@ mod tests {
                 Quantity::new(1.0).unwrap(),
             )
             .unwrap();
-            let signed = leg.signed_notional();
-            // signed_notional returns None because Price cannot be negative
-            // This is expected behavior - we document that signed_notional
-            // returns None for buy side since Price doesn't support negatives
-            assert!(signed.is_none());
+            let signed = leg.signed_notional().unwrap();
+            // signed_notional returns Decimal, which can be negative for buy side
+            assert!(signed.is_sign_negative());
+            assert_eq!(signed, Decimal::new(-100, 0));
         }
 
         #[test]
@@ -680,7 +684,8 @@ mod tests {
             )
             .unwrap();
             let signed = leg.signed_notional().unwrap();
-            assert!(signed.is_positive());
+            assert!(signed.is_sign_positive());
+            assert_eq!(signed, Decimal::new(100, 0));
         }
 
         #[test]

@@ -206,10 +206,10 @@ impl<V: VenueAdapter + 'static> MultiLegQuoteCollector<V> {
         let mut leg_prices = Vec::with_capacity(strategy.leg_count());
         let mut net_price = Decimal::ZERO;
 
+        // TODO(#14): This sequential loop could be parallelized with join_all for better latency.
+        // TODO(#14): Each leg currently uses the same RFQ, which means all legs get the same price.
+        //            A proper implementation should create single-leg RFQs per instrument.
         for leg in strategy.legs() {
-            // Create a single-leg RFQ for this leg
-            // Note: In a real implementation, we'd need to create proper single-leg RFQs
-            // For now, we use the original RFQ and extract the relevant quote
             match venue.request_quote(rfq).await {
                 Ok(quote) => {
                     let leg_price = LegPrice::from_parts(
@@ -261,7 +261,7 @@ impl<V: VenueAdapter + 'static> MultiLegQuoteCollector<V> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::domain::entities::quote::{Quote, QuoteBuilder};
@@ -422,7 +422,8 @@ mod tests {
     #[tokio::test]
     async fn collect_quotes_from_multi_leg_venue() {
         let venue = Arc::new(MockVenue::new("multi-leg-venue", true));
-        let collector = MultiLegQuoteCollector::new(vec![venue.clone()], Duration::from_secs(5));
+        let collector =
+            MultiLegQuoteCollector::new(vec![Arc::clone(&venue)], Duration::from_secs(5));
 
         let strategy = test_strategy();
         let rfq = test_rfq();
@@ -430,14 +431,16 @@ mod tests {
         let quotes = collector.collect_quotes(&strategy, &rfq).await;
 
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0].venue_id().as_str(), "multi-leg-venue");
+        let first = quotes.first().expect("should have one quote");
+        assert_eq!(first.venue_id().as_str(), "multi-leg-venue");
         assert_eq!(venue.call_count.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn collect_quotes_uses_fallback_for_non_multi_leg_venue() {
         let venue = Arc::new(MockVenue::new("single-leg-venue", false));
-        let collector = MultiLegQuoteCollector::new(vec![venue.clone()], Duration::from_secs(5));
+        let collector =
+            MultiLegQuoteCollector::new(vec![Arc::clone(&venue)], Duration::from_secs(5));
 
         let strategy = test_strategy();
         let rfq = test_rfq();
@@ -445,7 +448,8 @@ mod tests {
         let quotes = collector.collect_quotes(&strategy, &rfq).await;
 
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0].venue_id().as_str(), "single-leg-venue");
+        let first = quotes.first().expect("should have one quote");
+        assert_eq!(first.venue_id().as_str(), "single-leg-venue");
         // Should have called request_quote for each leg
         assert!(venue.call_count.load(Ordering::SeqCst) >= 2);
     }
@@ -465,7 +469,8 @@ mod tests {
 
         // Only the working venue should return a quote
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0].venue_id().as_str(), "working-venue");
+        let first = quotes.first().expect("should have one quote");
+        assert_eq!(first.venue_id().as_str(), "working-venue");
     }
 
     #[tokio::test]

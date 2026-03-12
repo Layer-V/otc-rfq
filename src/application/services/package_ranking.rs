@@ -94,24 +94,21 @@ impl BestNetPriceStrategy {
 }
 
 impl PackageRankingStrategy for BestNetPriceStrategy {
-    fn rank(&self, quotes: &[PackageQuote], side: OrderSide) -> Vec<RankedPackageQuote> {
+    fn rank(&self, quotes: &[PackageQuote], _side: OrderSide) -> Vec<RankedPackageQuote> {
         if quotes.is_empty() {
             return Vec::new();
         }
 
         // Score quotes based on net price
+        // Convention: positive net_price = debit (buyer pays), negative = credit (buyer receives)
+        // For both sides, we want to minimize cost / maximize credit, so we negate net_price
         let mut scored: Vec<(usize, f64)> = quotes
             .iter()
             .enumerate()
             .map(|(i, q)| {
                 let net_price = q.net_price().to_f64().unwrap_or(0.0);
-                let score = match side {
-                    // For buying: lower net price (less cost) is better
-                    // Negate so that lower prices get higher scores
-                    OrderSide::Buy => -net_price,
-                    // For selling: higher net price (more credit) is better
-                    OrderSide::Sell => net_price,
-                };
+                // Negate so that lower net prices (less cost or more credit) get higher scores
+                let score = -net_price;
                 (i, score)
             })
             .collect();
@@ -197,7 +194,7 @@ impl Default for WeightedPackageStrategy {
 }
 
 impl PackageRankingStrategy for WeightedPackageStrategy {
-    fn rank(&self, quotes: &[PackageQuote], side: OrderSide) -> Vec<RankedPackageQuote> {
+    fn rank(&self, quotes: &[PackageQuote], _side: OrderSide) -> Vec<RankedPackageQuote> {
         if quotes.is_empty() {
             return Vec::new();
         }
@@ -212,11 +209,9 @@ impl PackageRankingStrategy for WeightedPackageStrategy {
             .map(|(i, q)| {
                 let net_price = q.net_price().to_f64().unwrap_or(0.0);
 
-                // Normalize price score
-                let price_score = match side {
-                    OrderSide::Buy => -net_price,
-                    OrderSide::Sell => net_price,
-                };
+                // Normalize price score - lower net_price is better for both sides
+                // (less cost for debit, more credit for credit strategies)
+                let price_score = -net_price;
 
                 // For now, assume all venues have equal reliability (1.0)
                 // In a full implementation, this would come from venue metrics
@@ -249,7 +244,7 @@ impl PackageRankingStrategy for WeightedPackageStrategy {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::domain::entities::package_quote::LegPrice;
@@ -323,34 +318,33 @@ mod tests {
             let ranked = strategy.rank(&quotes, OrderSide::Buy);
 
             assert_eq!(ranked.len(), 3);
-            assert_eq!(ranked[0].rank, 1);
-            assert_eq!(ranked[0].quote.venue_id().as_str(), "venue-b"); // Lowest cost
-            assert_eq!(ranked[1].quote.venue_id().as_str(), "venue-a");
-            assert_eq!(ranked[2].quote.venue_id().as_str(), "venue-c");
+            let first = ranked.first().expect("should have quotes");
+            assert_eq!(first.rank, 1);
+            assert_eq!(first.quote.venue_id().as_str(), "venue-b"); // Lowest cost
+            assert_eq!(ranked.get(1).unwrap().quote.venue_id().as_str(), "venue-a");
+            assert_eq!(ranked.get(2).unwrap().quote.venue_id().as_str(), "venue-c");
         }
 
         #[test]
-        fn ranks_sell_side_by_highest_net_price() {
+        fn ranks_sell_side_by_most_credit() {
             let strategy = BestNetPriceStrategy::new();
 
             let quotes = vec![
                 create_package_quote("venue-a", Decimal::new(-100, 0)), // Net credit 100
-                create_package_quote("venue-b", Decimal::new(-150, 0)), // Net credit 150 (best)
+                create_package_quote("venue-b", Decimal::new(-150, 0)), // Net credit 150 (best - most credit)
                 create_package_quote("venue-c", Decimal::new(-50, 0)),  // Net credit 50
             ];
 
             let ranked = strategy.rank(&quotes, OrderSide::Sell);
 
             assert_eq!(ranked.len(), 3);
-            assert_eq!(ranked[0].rank, 1);
-            // For sell side, higher (less negative) net price is better
-            // But since these are credits (negative), we want the most negative (most credit)
-            // Actually, for sell side, higher net_price is better
-            // -50 > -100 > -150, so venue-c would be "best" by raw value
-            // But semantically, -150 means more credit received, which is better for selling
-            // The current implementation uses raw net_price for sell side
-            // Let's verify the actual behavior
-            assert!(ranked[0].quote.net_price() > ranked[1].quote.net_price());
+            let first = ranked.first().expect("should have quotes");
+            assert_eq!(first.rank, 1);
+            // For sell side, we want the most credit (most negative net_price)
+            // -150 < -100 < -50, so venue-b (most credit) should rank first
+            assert_eq!(first.quote.venue_id().as_str(), "venue-b");
+            assert_eq!(ranked.get(1).unwrap().quote.venue_id().as_str(), "venue-a");
+            assert_eq!(ranked.get(2).unwrap().quote.venue_id().as_str(), "venue-c");
         }
 
         #[test]
@@ -368,8 +362,9 @@ mod tests {
             let ranked = strategy.rank(&quotes, OrderSide::Buy);
 
             assert_eq!(ranked.len(), 1);
-            assert_eq!(ranked[0].rank, 1);
-            assert!(ranked[0].is_best());
+            let first = ranked.first().expect("should have one quote");
+            assert_eq!(first.rank, 1);
+            assert!(first.is_best());
         }
 
         #[test]
@@ -393,7 +388,8 @@ mod tests {
 
             let ranked = strategy.rank(&quotes, OrderSide::Buy);
 
-            assert_eq!(ranked[0].quote.venue_id().as_str(), "venue-b");
+            let first = ranked.first().expect("should have quotes");
+            assert_eq!(first.quote.venue_id().as_str(), "venue-b");
         }
 
         #[test]
@@ -412,13 +408,13 @@ mod tests {
         #[test]
         #[should_panic(expected = "price_weight must be non-negative")]
         fn panics_on_negative_price_weight() {
-            WeightedPackageStrategy::new(-1.0, 1.0);
+            let _ = WeightedPackageStrategy::new(-1.0, 1.0);
         }
 
         #[test]
         #[should_panic(expected = "weights must sum to positive value")]
         fn panics_on_zero_total_weight() {
-            WeightedPackageStrategy::new(0.0, 0.0);
+            let _ = WeightedPackageStrategy::new(0.0, 0.0);
         }
     }
 
