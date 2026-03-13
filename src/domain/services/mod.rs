@@ -21,6 +21,7 @@ pub mod acceptance_flow;
 pub mod atomic_matcher;
 pub mod block_trade;
 pub mod block_trade_service;
+pub mod capacity_manager;
 pub mod collateral_lock;
 pub mod compensating_trade;
 pub mod conflict_resolver;
@@ -82,3 +83,8 @@ pub use multi_leg_executor::{
 };
 pub use package_quote_validator::{DEFAULT_TOLERANCE_BPS, PackageQuoteValidator};
 pub use resource_lock::{ResourceLock, sort_locks};
+
+pub use capacity_manager::{
+    CapacityManager, CapacityManagerConfig, DEFAULT_ADJUSTMENT_PERCENTAGE,
+    DEFAULT_DECREASE_THRESHOLD, DEFAULT_INCREASE_THRESHOLD, MmCapacityRepository,
+};

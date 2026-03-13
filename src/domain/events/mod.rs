@@ -54,6 +54,7 @@ pub mod acceptance_events;
 pub mod allocation_events;
 pub mod atomic_execution_events;
 pub mod block_trade_events;
+pub mod capacity_events;
 pub mod compliance_events;
 pub mod conflict_events;
 pub mod domain_event;
@@ -79,6 +80,9 @@ pub use atomic_execution_events::{
 pub use block_trade_events::{
     BlockTradeApproved, BlockTradeConfirmed, BlockTradeExecuted, BlockTradeFailed,
     BlockTradeRejected, BlockTradeRole, BlockTradeSubmitted, BlockTradeValidated,
+};
+pub use capacity_events::{
+    CapacityAdjusted, CapacityEvent, CapacityReleased, CapacityReserved, MmExcludedForCapacity,
 };
 pub use compliance_events::{
     ComplianceCheckFailed, ComplianceCheckPassed, ComplianceCheckType, ComplianceEvent,
