@@ -57,6 +57,7 @@ pub mod block_trade_events;
 pub mod compliance_events;
 pub mod conflict_events;
 pub mod domain_event;
+pub mod multi_leg_execution_events;
 pub mod negotiation_events;
 pub mod off_book_events;
 pub mod price_discovery_events;
@@ -84,6 +85,11 @@ pub use compliance_events::{
 };
 pub use conflict_events::{ConflictDetectedEvent, ConflictEvent, ConflictResolvedEvent};
 pub use domain_event::{DomainEvent, EventMetadata, EventType};
+pub use multi_leg_execution_events::{
+    LegExecuted, LegFailed, MultiLegExecutionCompleted, MultiLegExecutionEvent,
+    MultiLegExecutionId, MultiLegExecutionStarted, MultiLegPartialFailure,
+    MultiLegRollbackCompleted, MultiLegRollbackStarted,
+};
 pub use negotiation_events::{
     CounterQuoteReceived as NegotiationCounterQuoteReceived, CounterQuoteSent,
     NegotiationCompleted, NegotiationEvent, NegotiationOutcome,
