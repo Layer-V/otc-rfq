@@ -150,6 +150,37 @@ pub enum DomainError {
         /// Reason for inconsistency.
         reason: String,
     },
+
+    // Multi-leg execution errors
+    /// Multi-leg execution failed.
+    MultiLegExecutionFailed {
+        /// Index of the leg that failed.
+        failed_leg_index: usize,
+        /// Instrument of the failed leg.
+        failed_leg_instrument: String,
+        /// Reason for failure.
+        reason: String,
+        /// Number of legs that were rolled back.
+        rolled_back_count: usize,
+    },
+    /// Rollback failed during multi-leg execution recovery.
+    RollbackFailed {
+        /// Original failure that triggered the rollback.
+        original_failure: String,
+        /// Failure during rollback.
+        rollback_failure: String,
+        /// Number of legs that were successfully rolled back.
+        partially_rolled_back: usize,
+    },
+    /// Leg execution timed out.
+    LegExecutionTimeout {
+        /// Index of the leg that timed out.
+        leg_index: usize,
+        /// Instrument of the timed out leg.
+        instrument: String,
+        /// Timeout in milliseconds.
+        timeout_ms: u64,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -251,6 +282,40 @@ impl fmt::Display for DomainError {
                     f,
                     "inconsistent leg prices at index {}: {}",
                     leg_index, reason
+                )
+            }
+            Self::MultiLegExecutionFailed {
+                failed_leg_index,
+                failed_leg_instrument,
+                reason,
+                rolled_back_count,
+            } => {
+                write!(
+                    f,
+                    "multi-leg execution failed at leg {} ({}): {}, rolled back {} legs",
+                    failed_leg_index, failed_leg_instrument, reason, rolled_back_count
+                )
+            }
+            Self::RollbackFailed {
+                original_failure,
+                rollback_failure,
+                partially_rolled_back,
+            } => {
+                write!(
+                    f,
+                    "rollback failed: original error '{}', rollback error '{}', {} legs partially rolled back",
+                    original_failure, rollback_failure, partially_rolled_back
+                )
+            }
+            Self::LegExecutionTimeout {
+                leg_index,
+                instrument,
+                timeout_ms,
+            } => {
+                write!(
+                    f,
+                    "leg {} ({}) execution timed out after {}ms",
+                    leg_index, instrument, timeout_ms
                 )
             }
         }

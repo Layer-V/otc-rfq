@@ -22,11 +22,13 @@ pub mod atomic_matcher;
 pub mod block_trade;
 pub mod block_trade_service;
 pub mod collateral_lock;
+pub mod compensating_trade;
 pub mod conflict_resolver;
 pub mod last_look;
 pub mod lock_manager;
 pub mod market_calendar;
 pub mod mm_performance;
+pub mod multi_leg_executor;
 pub mod off_book_executor;
 pub mod package_quote_validator;
 pub mod position_service;
@@ -72,6 +74,11 @@ pub use settlement::{Fees, SettlementResult, SettlementService};
 pub use theoretical_pricer::TheoreticalPricer;
 
 pub use atomic_matcher::{AtomicExecutionResult, AtomicMatcher, AtomicMatcherConfig};
+pub use compensating_trade::{CompensatingTrade, CompensatingTradeGenerator, LegExecutionResult};
 pub use lock_manager::{LockGuard, LockInfo, LockManager, LockManagerConfig, SharedLockManager};
+pub use multi_leg_executor::{
+    LegExecutor, MultiLegExecutionResult, MultiLegExecutionState, MultiLegExecutor,
+    MultiLegExecutorConfig,
+};
 pub use package_quote_validator::{DEFAULT_TOLERANCE_BPS, PackageQuoteValidator};
 pub use resource_lock::{ResourceLock, sort_locks};
