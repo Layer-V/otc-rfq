@@ -181,6 +181,27 @@ pub enum DomainError {
         /// Timeout in milliseconds.
         timeout_ms: u64,
     },
+
+    // Capacity management errors
+    /// Market maker capacity exceeded.
+    CapacityExceeded {
+        /// Market maker identifier.
+        mm_id: String,
+        /// Reason for capacity limit.
+        reason: String,
+    },
+    /// Capacity reservation not found.
+    ReservationNotFound {
+        /// Market maker identifier.
+        mm_id: String,
+        /// RFQ identifier.
+        rfq_id: String,
+    },
+    /// Capacity repository error.
+    CapacityRepositoryError {
+        /// Error message.
+        message: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -317,6 +338,19 @@ impl fmt::Display for DomainError {
                     "leg {} ({}) execution timed out after {}ms",
                     leg_index, instrument, timeout_ms
                 )
+            }
+            Self::CapacityExceeded { mm_id, reason } => {
+                write!(f, "capacity exceeded for MM {}: {}", mm_id, reason)
+            }
+            Self::ReservationNotFound { mm_id, rfq_id } => {
+                write!(
+                    f,
+                    "reservation not found for MM {} and RFQ {}",
+                    mm_id, rfq_id
+                )
+            }
+            Self::CapacityRepositoryError { message } => {
+                write!(f, "capacity repository error: {}", message)
             }
         }
     }
