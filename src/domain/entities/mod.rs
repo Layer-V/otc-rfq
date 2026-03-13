@@ -22,6 +22,7 @@ pub mod counterparty;
 pub mod delayed_report;
 pub mod mm_performance;
 pub mod negotiation;
+pub mod package_quote;
 pub mod quote;
 pub mod rfq;
 pub mod trade;
@@ -45,6 +46,7 @@ pub use mm_performance::{
     MmPerformanceMetrics,
 };
 pub use negotiation::{DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS, Negotiation, NegotiationRound};
+pub use package_quote::{LegPrice, PackageQuote, PackageQuoteBuilder};
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
 pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
 pub use trade::{InvalidSettlementStateError, SettlementState, Trade};

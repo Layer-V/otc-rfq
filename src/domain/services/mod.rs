@@ -28,6 +28,7 @@ pub mod lock_manager;
 pub mod market_calendar;
 pub mod mm_performance;
 pub mod off_book_executor;
+pub mod package_quote_validator;
 pub mod position_service;
 pub mod price_discovery_service;
 pub mod quote_lock;
@@ -72,4 +73,5 @@ pub use theoretical_pricer::TheoreticalPricer;
 
 pub use atomic_matcher::{AtomicExecutionResult, AtomicMatcher, AtomicMatcherConfig};
 pub use lock_manager::{LockGuard, LockInfo, LockManager, LockManagerConfig, SharedLockManager};
+pub use package_quote_validator::{DEFAULT_TOLERANCE_BPS, PackageQuoteValidator};
 pub use resource_lock::{ResourceLock, sort_locks};

@@ -139,6 +139,17 @@ pub enum DomainError {
     PositionUpdateFailed(String),
     /// Price bounds verification failed (CRE check).
     PriceBoundsVerificationFailed(String),
+
+    // Package quote errors
+    /// Invalid package quote.
+    InvalidPackageQuote(String),
+    /// Inconsistent leg prices in package quote.
+    InconsistentLegPrices {
+        /// Index of the problematic leg.
+        leg_index: usize,
+        /// Reason for inconsistency.
+        reason: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -233,6 +244,14 @@ impl fmt::Display for DomainError {
             Self::PositionUpdateFailed(msg) => write!(f, "position update failed: {}", msg),
             Self::PriceBoundsVerificationFailed(msg) => {
                 write!(f, "price bounds verification failed: {}", msg)
+            }
+            Self::InvalidPackageQuote(msg) => write!(f, "invalid package quote: {}", msg),
+            Self::InconsistentLegPrices { leg_index, reason } => {
+                write!(
+                    f,
+                    "inconsistent leg prices at index {}: {}",
+                    leg_index, reason
+                )
             }
         }
     }
