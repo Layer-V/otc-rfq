@@ -160,6 +160,10 @@ impl FxRate {
     }
 
     /// Returns the inverse rate (for reverse conversion).
+    /// 
+    /// Note: If the original rate is zero, the inverse rate will also be zero
+    /// to prevent division by zero. Any subsequent conversion using this inverse
+    /// rate will result in zero.
     #[must_use]
     pub fn inverse(&self) -> Self {
         Self {

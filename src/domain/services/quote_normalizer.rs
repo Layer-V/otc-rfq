@@ -15,14 +15,14 @@
 //! use otc_rfq::domain::entities::quote_normalizer::{NormalizationConfig, QuoteType};
 //!
 //! let normalizer = QuoteNormalizer::new();
-//! let config = NormalizationConfig::default();
-//! let normalized = normalizer.normalize(&quote, &config, QuoteType::Firm, None);
+//! let normalized = normalizer.normalize(&quote, QuoteType::Firm, None);
 //! ```
 
 use crate::domain::entities::quote::Quote;
 use crate::domain::entities::quote_normalizer::{
     FxRate, NormalizationConfig, NormalizationConfigRegistry, NormalizedQuote, QuoteType,
 };
+use crate::domain::value_objects::ids::QuoteId;
 use crate::domain::value_objects::{Price, Quantity};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
@@ -139,7 +139,7 @@ impl QuoteNormalizer {
         let original_timestamp = quote.created_at();
 
         // 1. Price normalization (FX conversion)
-        let (normalized_price, fx_rate_used) =
+        let (normalized_price, fx_rate_used, effective_currency) =
             self.normalize_price(&original_price, config, source_currency);
 
         // 2. Quantity normalization (contract multiplier)
@@ -147,7 +147,7 @@ impl QuoteNormalizer {
 
         // 3. Fee normalization (all-in price)
         let (all_in_price, fee_amount, fee_rate) =
-            self.normalize_fees(&normalized_price, quote, config);
+            self.normalize_fees(&normalized_price, &normalized_quantity, quote, config);
 
         // 4. Timestamp normalization (latency adjustment)
         let adjusted_timestamp = self.normalize_timestamp(original_timestamp, config);
@@ -167,7 +167,7 @@ impl QuoteNormalizer {
             original_timestamp,
             adjusted_timestamp,
             quote.valid_until(),
-            config.base_currency().to_string(),
+            effective_currency,
         );
 
         if let Some(rate) = fx_rate_used {
@@ -192,14 +192,14 @@ impl QuoteNormalizer {
     pub fn normalize_batch(
         &self,
         quotes: &[Quote],
-        quote_types: &HashMap<String, QuoteType>,
+        quote_types: &HashMap<QuoteId, QuoteType>,
         source_currency: Option<&str>,
     ) -> Vec<NormalizedQuote> {
         quotes
             .iter()
             .map(|q| {
                 let quote_type = quote_types
-                    .get(&q.id().to_string())
+                    .get(&q.id())
                     .copied()
                     .unwrap_or(QuoteType::Firm);
                 self.normalize(q, quote_type, source_currency)
@@ -208,29 +208,30 @@ impl QuoteNormalizer {
     }
 
     /// Normalizes price by converting to base currency.
+    /// Returns (converted_price, fx_rate_used, effective_currency).
     fn normalize_price(
         &self,
         price: &Price,
         config: &NormalizationConfig,
         source_currency: Option<&str>,
-    ) -> (Price, Option<Decimal>) {
+    ) -> (Price, Option<Decimal>, String) {
         let source = source_currency.unwrap_or(config.base_currency());
 
         // If already in base currency, no conversion needed
         if source == config.base_currency() {
-            return (*price, None);
+            return (*price, None, config.base_currency().to_string());
         }
 
         // Look up FX rate
         if let Some(fx_rate) = self.get_fx_rate(source, config.base_currency()) {
             let converted = fx_rate.convert(price.get());
             if let Ok(new_price) = Price::from_decimal(converted) {
-                return (new_price, Some(fx_rate.rate()));
+                return (new_price, Some(fx_rate.rate()), config.base_currency().to_string());
             }
         }
 
-        // No conversion available, return original
-        (*price, None)
+        // No conversion available, return original with source currency
+        (*price, None, source.to_string())
     }
 
     /// Normalizes quantity by applying contract multiplier.
@@ -249,10 +250,11 @@ impl QuoteNormalizer {
     fn normalize_fees(
         &self,
         normalized_price: &Price,
+        normalized_quantity: &Quantity,
         quote: &Quote,
         config: &NormalizationConfig,
     ) -> (Price, Decimal, Decimal) {
-        // If fees already included in quote and we don't want to include them, return as-is
+        // Return as-is if fees are already included or if we don't want to include them
         if config.fees_included_in_quote() || !config.include_fees() {
             return (*normalized_price, Decimal::ZERO, Decimal::ZERO);
         }
@@ -261,21 +263,32 @@ impl QuoteNormalizer {
         let fee_rate = quote
             .commission()
             .map(|c| {
-                // Commission is absolute, convert to rate
-                if normalized_price.get().is_zero() {
+                // Commission is absolute amount per quote, convert to per-unit rate
+                let total_notional = normalized_price.get() * normalized_quantity.get();
+                if total_notional.is_zero() {
                     Decimal::ZERO
                 } else {
-                    c.get() / normalized_price.get()
+                    c.get() / total_notional
                 }
             })
             .unwrap_or_else(|| config.default_fee_rate());
 
-        // Calculate fee amount
+        // Calculate per-unit fee amount
         let fee_amount = normalized_price.get() * fee_rate;
 
-        // Calculate all-in price
+        // Calculate all-in price per unit
         let all_in = normalized_price.get() + fee_amount;
-        let all_in_price = Price::from_decimal(all_in).unwrap_or(*normalized_price);
+        let all_in_price = Price::from_decimal(all_in).unwrap_or_else(|_| {
+            if all_in <= Decimal::ZERO {
+                tracing::warn!(
+                    price = %normalized_price.get(),
+                    fee_amount = %fee_amount,
+                    all_in = %all_in,
+                    "All-in price is zero or negative, falling back to normalized price"
+                );
+            }
+            *normalized_price
+        });
 
         (all_in_price, fee_amount, fee_rate)
     }
@@ -510,6 +523,9 @@ mod tests {
     #[test]
     fn sort_by_price_buy_side() {
         let normalizer = QuoteNormalizer::new();
+        let config = NormalizationConfig::builder()
+            .include_fees(false)
+            .build();
         let quotes = vec![
             create_test_quote(100.0, 10.0, "venue-1"),
             create_test_quote(95.0, 10.0, "venue-2"),
@@ -518,20 +534,23 @@ mod tests {
 
         let mut normalized: Vec<_> = quotes
             .iter()
-            .map(|q| normalizer.normalize(q, QuoteType::Firm, None))
+            .map(|q| normalizer.normalize_with_config(q, &config, QuoteType::Firm, None))
             .collect();
 
         let _ = QuoteNormalizer::sort_by_price(&mut normalized, true);
 
-        // For buy side, lowest price first
-        assert_eq!(normalized[0].normalized_price().get(), Decimal::new(95, 0));
-        assert_eq!(normalized[1].normalized_price().get(), Decimal::new(100, 0));
-        assert_eq!(normalized[2].normalized_price().get(), Decimal::new(105, 0));
+        // For buy side, lowest all-in price first
+        assert_eq!(normalized[0].all_in_price().get(), Decimal::new(95, 0));
+        assert_eq!(normalized[1].all_in_price().get(), Decimal::new(100, 0));
+        assert_eq!(normalized[2].all_in_price().get(), Decimal::new(105, 0));
     }
 
     #[test]
     fn sort_by_price_sell_side() {
         let normalizer = QuoteNormalizer::new();
+        let config = NormalizationConfig::builder()
+            .include_fees(false)
+            .build();
         let quotes = vec![
             create_test_quote(100.0, 10.0, "venue-1"),
             create_test_quote(95.0, 10.0, "venue-2"),
@@ -540,15 +559,15 @@ mod tests {
 
         let mut normalized: Vec<_> = quotes
             .iter()
-            .map(|q| normalizer.normalize(q, QuoteType::Firm, None))
+            .map(|q| normalizer.normalize_with_config(q, &config, QuoteType::Firm, None))
             .collect();
 
         let _ = QuoteNormalizer::sort_by_price(&mut normalized, false);
 
-        // For sell side, highest price first
-        assert_eq!(normalized[0].normalized_price().get(), Decimal::new(105, 0));
-        assert_eq!(normalized[1].normalized_price().get(), Decimal::new(100, 0));
-        assert_eq!(normalized[2].normalized_price().get(), Decimal::new(95, 0));
+        // For sell side, highest all-in price first
+        assert_eq!(normalized[0].all_in_price().get(), Decimal::new(105, 0));
+        assert_eq!(normalized[1].all_in_price().get(), Decimal::new(100, 0));
+        assert_eq!(normalized[2].all_in_price().get(), Decimal::new(95, 0));
     }
 
     #[test]
