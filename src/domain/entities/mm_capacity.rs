@@ -136,8 +136,8 @@ impl MmCapacityConfig {
         use rust_decimal::prelude::ToPrimitive;
         let adjustment = Decimal::from(self.max_concurrent_quotes) * percentage;
         let new_value = Decimal::from(self.max_concurrent_quotes) + adjustment;
-        // Ensure at least 1 quote allowed, truncate decimal part
-        self.max_concurrent_quotes = new_value.trunc().to_u32().unwrap_or(1).max(1);
+        // Ensure at least 1 quote allowed, round to nearest integer
+        self.max_concurrent_quotes = new_value.round().to_u32().unwrap_or(1).max(1);
         self.max_concurrent_quotes
     }
 
@@ -396,25 +396,47 @@ impl MmCapacityState {
 
     /// Adds a reservation and updates usage counters.
     ///
+    /// This operation is idempotent - if a reservation with the same RfqId already exists,
+    /// it will be replaced and counters adjusted accordingly.
+    ///
     /// # Arguments
     ///
     /// * `reservation` - The reservation to add
     pub fn add_reservation(&mut self, reservation: CapacityReservation) {
+        let rfq_id = reservation.rfq_id();
         let notional = reservation.notional();
         let instrument = reservation.instrument().clone();
 
-        // Update counters
+        // If reservation already exists, remove old counters first
+        if let Some(existing) = self.reservations.get(&rfq_id) {
+            let old_notional = existing.notional();
+            let old_instrument = existing.instrument();
+
+            // Revert old counters
+            self.active_quotes = self.active_quotes.saturating_sub(1);
+            self.current_notional = (self.current_notional - old_notional).max(Decimal::ZERO);
+
+            if let Some(usage) = self.per_instrument_usage.get_mut(old_instrument) {
+                *usage = (*usage - old_notional).max(Decimal::ZERO);
+                if *usage == Decimal::ZERO {
+                    self.per_instrument_usage.remove(old_instrument);
+                }
+            }
+        }
+
+        // Update counters with new reservation
         self.active_quotes = self.active_quotes.saturating_add(1);
-        self.current_notional += notional;
+        self.current_notional = self.current_notional.saturating_add(notional);
 
         // Update per-instrument usage
-        *self
+        let entry = self
             .per_instrument_usage
             .entry(instrument)
-            .or_insert(Decimal::ZERO) += notional;
+            .or_insert(Decimal::ZERO);
+        *entry = entry.saturating_add(notional);
 
         // Store reservation
-        self.reservations.insert(reservation.rfq_id(), reservation);
+        self.reservations.insert(rfq_id, reservation);
         self.updated_at = Timestamp::now();
     }
 

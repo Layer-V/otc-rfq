@@ -212,6 +212,12 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
         instrument: &Symbol,
         notional: Decimal,
     ) -> DomainResult<CapacityCheckResult> {
+        if notional <= Decimal::ZERO {
+            return Err(DomainError::ValidationError(
+                "notional must be positive".to_string(),
+            ));
+        }
+
         let config = self.get_or_default_config(mm_id).await?;
         let state = self.repository.get_state(mm_id).await?;
 
@@ -358,7 +364,12 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
             return Ok(None);
         }
 
-        let response_rate = metrics.response_rate_pct().unwrap_or(0.0) / 100.0;
+        // Only adjust if there's sufficient data (response_rate_pct returns None when no RFQs sent)
+        let Some(response_rate_pct) = metrics.response_rate_pct() else {
+            return Ok(None);
+        };
+
+        let response_rate = response_rate_pct / 100.0;
         let previous_max_quotes = config.max_concurrent_quotes();
         let previous_max_notional = config.max_notional();
 
