@@ -342,7 +342,7 @@ impl fmt::Display for QuoteNormalizer {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use crate::domain::value_objects::ids::{RfqId, VenueId};
