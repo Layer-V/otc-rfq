@@ -36,6 +36,8 @@ pub enum EventType {
     Settlement,
     /// Compliance events.
     Compliance,
+    /// Capacity management events.
+    Capacity,
 }
 
 impl fmt::Display for EventType {
@@ -46,6 +48,7 @@ impl fmt::Display for EventType {
             Self::Trade => write!(f, "TRADE"),
             Self::Settlement => write!(f, "SETTLEMENT"),
             Self::Compliance => write!(f, "COMPLIANCE"),
+            Self::Capacity => write!(f, "CAPACITY"),
         }
     }
 }
