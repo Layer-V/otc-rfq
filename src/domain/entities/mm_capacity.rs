@@ -402,6 +402,12 @@ impl MmCapacityState {
     /// # Arguments
     ///
     /// * `reservation` - The reservation to add
+    ///
+    /// # Panics
+    ///
+    /// Panics if internal counter arithmetic overflows or underflows, which indicates
+    /// a bug in the capacity tracking logic.
+    #[allow(clippy::panic)]
     pub fn add_reservation(&mut self, reservation: CapacityReservation) {
         let rfq_id = reservation.rfq_id();
         let notional = reservation.notional();
@@ -413,7 +419,9 @@ impl MmCapacityState {
             let old_instrument = existing.instrument();
 
             // Revert old counters
-            self.active_quotes = self.active_quotes.saturating_sub(1);
+            self.active_quotes = self.active_quotes.checked_sub(1).unwrap_or_else(|| {
+                panic!("active_quotes underflow: this is a bug in capacity tracking")
+            });
             self.current_notional = (self.current_notional - old_notional).max(Decimal::ZERO);
 
             if let Some(usage) = self.per_instrument_usage.get_mut(old_instrument) {
@@ -425,15 +433,24 @@ impl MmCapacityState {
         }
 
         // Update counters with new reservation
-        self.active_quotes = self.active_quotes.saturating_add(1);
-        self.current_notional = self.current_notional.saturating_add(notional);
+        self.active_quotes = self.active_quotes.checked_add(1).unwrap_or_else(|| {
+            panic!("active_quotes overflow: this is a bug in capacity tracking")
+        });
+        self.current_notional = self
+            .current_notional
+            .checked_add(notional)
+            .unwrap_or_else(|| {
+                panic!("current_notional overflow: this is a bug in capacity tracking")
+            });
 
         // Update per-instrument usage
         let entry = self
             .per_instrument_usage
             .entry(instrument)
             .or_insert(Decimal::ZERO);
-        *entry = entry.saturating_add(notional);
+        *entry = entry.checked_add(notional).unwrap_or_else(|| {
+            panic!("per_instrument_usage overflow: this is a bug in capacity tracking")
+        });
 
         // Store reservation
         self.reservations.insert(rfq_id, reservation);
@@ -449,13 +466,21 @@ impl MmCapacityState {
     /// # Returns
     ///
     /// The removed reservation, if it existed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if internal counter arithmetic underflows, which indicates
+    /// a bug in the capacity tracking logic.
+    #[allow(clippy::panic)]
     pub fn remove_reservation(&mut self, rfq_id: &RfqId) -> Option<CapacityReservation> {
         if let Some(reservation) = self.reservations.remove(rfq_id) {
             let notional = reservation.notional();
             let instrument = reservation.instrument();
 
             // Update counters
-            self.active_quotes = self.active_quotes.saturating_sub(1);
+            self.active_quotes = self.active_quotes.checked_sub(1).unwrap_or_else(|| {
+                panic!("active_quotes underflow: this is a bug in capacity tracking")
+            });
             self.current_notional = (self.current_notional - notional).max(Decimal::ZERO);
 
             // Update per-instrument usage
