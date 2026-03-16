@@ -16,6 +16,7 @@
 //! - `MmPerformanceMetrics`: Market maker performance tracking
 
 pub mod allocation;
+pub mod anonymity;
 pub mod block_trade;
 pub mod counter_quote;
 pub mod counterparty;
@@ -25,6 +26,7 @@ pub mod mm_performance;
 pub mod negotiation;
 pub mod package_quote;
 pub mod quote;
+pub mod quote_normalizer;
 pub mod rfq;
 pub mod trade;
 pub mod venue;
@@ -33,6 +35,7 @@ pub mod venue;
 mod tests;
 
 pub use allocation::Allocation;
+pub use anonymity::{AnonymityLevel, AnonymousRfqView, IdentityMapping};
 pub use block_trade::{
     BlockTrade, BlockTradeId, BlockTradeState, BlockTradeValidation, InvalidBlockTradeStateError,
 };
@@ -53,6 +56,10 @@ pub use mm_performance::{
 pub use negotiation::{DEFAULT_MAX_ROUNDS, MAX_ALLOWED_ROUNDS, Negotiation, NegotiationRound};
 pub use package_quote::{LegPrice, PackageQuote, PackageQuoteBuilder};
 pub use quote::{Quote, QuoteBuilder, QuoteMetadata};
+pub use quote_normalizer::{
+    FxRate, NormalizationConfig, NormalizationConfigBuilder, NormalizationConfigRegistry,
+    NormalizedQuote, QuoteType,
+};
 pub use rfq::{ComplianceResult, Rfq, RfqBuilder};
 pub use trade::{InvalidSettlementStateError, SettlementState, Trade};
 pub use venue::{InvalidVenueHealthError, Venue, VenueConfig, VenueHealth, VenueMetrics};
