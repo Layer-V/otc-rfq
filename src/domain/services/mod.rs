@@ -22,6 +22,7 @@ pub mod anonymity_service;
 pub mod atomic_matcher;
 pub mod block_trade;
 pub mod block_trade_service;
+pub mod capacity_manager;
 pub mod collateral_lock;
 pub mod compensating_trade;
 pub mod conflict_resolver;
@@ -87,3 +88,7 @@ pub use quote_normalizer::QuoteNormalizer;
 pub use resource_lock::{ResourceLock, sort_locks};
 
 pub use anonymity_service::{AnonymityError, AnonymityResult, AnonymityService};
+pub use capacity_manager::{
+    CapacityManager, CapacityManagerConfig, DEFAULT_ADJUSTMENT_PERCENTAGE,
+    DEFAULT_DECREASE_THRESHOLD, DEFAULT_INCREASE_THRESHOLD, MmCapacityRepository,
+};
