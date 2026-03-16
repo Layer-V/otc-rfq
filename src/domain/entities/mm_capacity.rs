@@ -23,6 +23,7 @@
 //! assert!(state.current_notional() == Decimal::ZERO);
 //! ```
 
+use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::value_objects::CounterpartyId;
 use crate::domain::value_objects::ids::RfqId;
 use crate::domain::value_objects::symbol::Symbol;
@@ -403,12 +404,11 @@ impl MmCapacityState {
     ///
     /// * `reservation` - The reservation to add
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if internal counter arithmetic overflows or underflows, which indicates
-    /// a bug in the capacity tracking logic.
-    #[allow(clippy::panic)]
-    pub fn add_reservation(&mut self, reservation: CapacityReservation) {
+    /// Returns `DomainError::CapacityOverflow` if counter arithmetic overflows.
+    /// Returns `DomainError::CapacityUnderflow` if counter arithmetic underflows.
+    pub fn add_reservation(&mut self, reservation: CapacityReservation) -> DomainResult<()> {
         let rfq_id = reservation.rfq_id();
         let notional = reservation.notional();
         let instrument = reservation.instrument().clone();
@@ -419,9 +419,11 @@ impl MmCapacityState {
             let old_instrument = existing.instrument();
 
             // Revert old counters
-            self.active_quotes = self.active_quotes.checked_sub(1).unwrap_or_else(|| {
-                panic!("active_quotes underflow: this is a bug in capacity tracking")
-            });
+            self.active_quotes = self.active_quotes.checked_sub(1).ok_or_else(|| {
+                DomainError::CapacityUnderflow {
+                    field: "active_quotes".to_string(),
+                }
+            })?;
             self.current_notional = (self.current_notional - old_notional).max(Decimal::ZERO);
 
             if let Some(usage) = self.per_instrument_usage.get_mut(old_instrument) {
@@ -433,28 +435,33 @@ impl MmCapacityState {
         }
 
         // Update counters with new reservation
-        self.active_quotes = self.active_quotes.checked_add(1).unwrap_or_else(|| {
-            panic!("active_quotes overflow: this is a bug in capacity tracking")
-        });
-        self.current_notional = self
-            .current_notional
-            .checked_add(notional)
-            .unwrap_or_else(|| {
-                panic!("current_notional overflow: this is a bug in capacity tracking")
-            });
+        self.active_quotes =
+            self.active_quotes
+                .checked_add(1)
+                .ok_or_else(|| DomainError::CapacityOverflow {
+                    field: "active_quotes".to_string(),
+                })?;
+        self.current_notional = self.current_notional.checked_add(notional).ok_or_else(|| {
+            DomainError::CapacityOverflow {
+                field: "current_notional".to_string(),
+            }
+        })?;
 
         // Update per-instrument usage
         let entry = self
             .per_instrument_usage
             .entry(instrument)
             .or_insert(Decimal::ZERO);
-        *entry = entry.checked_add(notional).unwrap_or_else(|| {
-            panic!("per_instrument_usage overflow: this is a bug in capacity tracking")
-        });
+        *entry = entry
+            .checked_add(notional)
+            .ok_or_else(|| DomainError::CapacityOverflow {
+                field: "per_instrument_usage".to_string(),
+            })?;
 
         // Store reservation
         self.reservations.insert(rfq_id, reservation);
         self.updated_at = Timestamp::now();
+        Ok(())
     }
 
     /// Removes a reservation and updates usage counters.
@@ -467,20 +474,23 @@ impl MmCapacityState {
     ///
     /// The removed reservation, if it existed.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if internal counter arithmetic underflows, which indicates
-    /// a bug in the capacity tracking logic.
-    #[allow(clippy::panic)]
-    pub fn remove_reservation(&mut self, rfq_id: &RfqId) -> Option<CapacityReservation> {
+    /// Returns `DomainError::CapacityUnderflow` if counter arithmetic underflows.
+    pub fn remove_reservation(
+        &mut self,
+        rfq_id: &RfqId,
+    ) -> DomainResult<Option<CapacityReservation>> {
         if let Some(reservation) = self.reservations.remove(rfq_id) {
             let notional = reservation.notional();
             let instrument = reservation.instrument();
 
             // Update counters
-            self.active_quotes = self.active_quotes.checked_sub(1).unwrap_or_else(|| {
-                panic!("active_quotes underflow: this is a bug in capacity tracking")
-            });
+            self.active_quotes = self.active_quotes.checked_sub(1).ok_or_else(|| {
+                DomainError::CapacityUnderflow {
+                    field: "active_quotes".to_string(),
+                }
+            })?;
             self.current_notional = (self.current_notional - notional).max(Decimal::ZERO);
 
             // Update per-instrument usage
@@ -492,9 +502,9 @@ impl MmCapacityState {
             }
 
             self.updated_at = Timestamp::now();
-            Some(reservation)
+            Ok(Some(reservation))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -745,7 +755,7 @@ mod tests {
             let reservation =
                 CapacityReservation::new(RfqId::new_v4(), symbol.clone(), Decimal::from(100_000));
 
-            state.add_reservation(reservation);
+            state.add_reservation(reservation).unwrap();
 
             assert_eq!(state.active_quotes(), 1);
             assert_eq!(state.current_notional(), Decimal::from(100_000));
@@ -760,8 +770,8 @@ mod tests {
             let reservation =
                 CapacityReservation::new(rfq_id, symbol.clone(), Decimal::from(100_000));
 
-            state.add_reservation(reservation);
-            let removed = state.remove_reservation(&rfq_id);
+            state.add_reservation(reservation).unwrap();
+            let removed = state.remove_reservation(&rfq_id).unwrap();
 
             assert!(removed.is_some());
             assert_eq!(state.active_quotes(), 0);
@@ -772,7 +782,7 @@ mod tests {
         #[test]
         fn remove_nonexistent_reservation_returns_none() {
             let mut state = MmCapacityState::new(CounterpartyId::new("mm-test"));
-            let removed = state.remove_reservation(&RfqId::new_v4());
+            let removed = state.remove_reservation(&RfqId::new_v4()).unwrap();
             assert!(removed.is_none());
         }
 
@@ -787,7 +797,7 @@ mod tests {
                     symbol.clone(),
                     Decimal::from(100_000),
                 );
-                state.add_reservation(reservation);
+                state.add_reservation(reservation).unwrap();
             }
 
             assert_eq!(state.active_quotes(), 3);
@@ -801,7 +811,7 @@ mod tests {
             let symbol = create_test_symbol();
             let reservation =
                 CapacityReservation::new(RfqId::new_v4(), symbol, Decimal::from(100_000));
-            state.add_reservation(reservation);
+            state.add_reservation(reservation).unwrap();
 
             state.clear();
 

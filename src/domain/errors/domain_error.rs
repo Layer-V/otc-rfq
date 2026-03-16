@@ -202,6 +202,16 @@ pub enum DomainError {
         /// Error message.
         message: String,
     },
+    /// Capacity counter overflow.
+    CapacityOverflow {
+        /// Description of what overflowed.
+        field: String,
+    },
+    /// Capacity counter underflow.
+    CapacityUnderflow {
+        /// Description of what underflowed.
+        field: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -351,6 +361,12 @@ impl fmt::Display for DomainError {
             }
             Self::CapacityRepositoryError { message } => {
                 write!(f, "capacity repository error: {}", message)
+            }
+            Self::CapacityOverflow { field } => {
+                write!(f, "capacity counter overflow: {}", field)
+            }
+            Self::CapacityUnderflow { field } => {
+                write!(f, "capacity counter underflow: {}", field)
             }
         }
     }

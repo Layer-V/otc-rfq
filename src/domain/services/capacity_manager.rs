@@ -289,7 +289,7 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
         // Get current state and add reservation
         let mut state = self.repository.get_state(mm_id).await?;
         let reservation = CapacityReservation::new(rfq_id, instrument.clone(), notional);
-        state.add_reservation(reservation);
+        state.add_reservation(reservation)?;
 
         // Save updated state
         self.repository.save_state(&state).await?;
@@ -325,7 +325,7 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
     ) -> DomainResult<Option<CapacityReleased>> {
         let mut state = self.repository.get_state(mm_id).await?;
 
-        if let Some(reservation) = state.remove_reservation(rfq_id) {
+        if let Some(reservation) = state.remove_reservation(rfq_id)? {
             self.repository.save_state(&state).await?;
 
             Ok(Some(CapacityReleased::new(
