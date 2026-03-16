@@ -173,9 +173,14 @@ pub trait MmCapacityRepository: Send + Sync + fmt::Debug {
 ///
 /// # Concurrency
 ///
-/// The manager uses per-MM locks to ensure atomic check-and-reserve operations.
-/// This prevents race conditions where concurrent callers could both pass capacity
-/// checks and then both reserve, exceeding limits.
+/// The manager uses per-MM locks to ensure atomic check-and-reserve operations
+/// **within a single process/instance**. This prevents race conditions where
+/// concurrent callers could both pass capacity checks and then both reserve,
+/// exceeding limits.
+///
+/// **Note:** Cross-process atomicity requires external coordination (e.g., database
+/// transactions or distributed locks) which is the responsibility of the repository
+/// implementation.
 pub struct CapacityManager<R: MmCapacityRepository> {
     /// Configuration for the capacity manager.
     config: CapacityManagerConfig,
@@ -304,11 +309,18 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
         instrument: &Symbol,
         notional: Decimal,
     ) -> DomainResult<CapacityReserved> {
+        // Validate arguments before acquiring lock to reduce contention
+        if notional <= Decimal::ZERO {
+            return Err(DomainError::ValidationError(
+                "notional must be positive".to_string(),
+            ));
+        }
+
         // Acquire per-MM lock to ensure atomic check-and-reserve
         let lock = self.get_mm_lock(mm_id);
         let _guard = lock.lock().await;
 
-        // Check capacity under lock
+        // Check capacity under lock (validation is duplicated but harmless)
         let check_result = self.check_capacity(mm_id, instrument, notional).await?;
         if check_result.is_exceeded() {
             return Err(DomainError::CapacityExceeded {
