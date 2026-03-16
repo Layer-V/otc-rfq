@@ -652,7 +652,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(event.mm_id(), &mm_id);
-            assert_eq!(event.rfq_id(), rfq_id);
+            assert_eq!(event.rfq_id_value(), rfq_id);
             assert_eq!(event.notional(), Decimal::from(100_000));
 
             // Verify state was updated
