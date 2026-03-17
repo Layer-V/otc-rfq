@@ -414,10 +414,13 @@ impl fmt::Display for EffectiveSpread {
 /// For Sell: realized_spread_bps = effective_spread_bps + price_movement_bps
 /// ```
 ///
-/// # Interpretation
+/// # Interpretation (Trader Perspective)
 ///
-/// - **Positive realized spread**: Trade was profitable for the market maker
-/// - **Negative realized spread**: Adverse selection (informed trader)
+/// - **Higher realized spread**: Price moved against the trader after execution
+///   (e.g., buy then price drops, sell then price rises)
+/// - **Lower realized spread**: Price moved favorably after execution
+/// - **Negative realized spread**: Exceptional case where favorable movement
+///   exceeded the original execution cost
 ///
 /// # Examples
 ///
@@ -560,10 +563,14 @@ impl RealizedSpread {
         self.side
     }
 
-    /// Returns true if there was adverse selection (informed trading).
+    /// Returns true if price moved against the trader after execution.
     ///
-    /// Adverse selection occurs when the price moves against the market maker
-    /// after the trade, indicating the counterparty may have had information.
+    /// This occurs when:
+    /// - Buy side: price dropped after purchase
+    /// - Sell side: price rose after sale
+    ///
+    /// From a market microstructure perspective, this indicates the trader
+    /// may have been on the wrong side of information flow.
     #[must_use]
     pub fn has_adverse_selection(&self) -> bool {
         self.realized_spread_bps > self.effective_spread_bps
