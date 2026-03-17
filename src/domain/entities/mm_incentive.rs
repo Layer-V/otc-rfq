@@ -11,11 +11,14 @@ use std::fmt;
 ///
 /// Tiers are assigned based on monthly trading volume and determine
 /// the rebate rates and bonuses available to the market maker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[repr(u8)]
 pub enum IncentiveTier {
     /// Entry-level tier for new or low-volume market makers.
+    #[default]
     Bronze = 0,
     /// Mid-tier for moderate volume market makers.
     Silver = 1,
@@ -23,12 +26,6 @@ pub enum IncentiveTier {
     Gold = 2,
     /// Top-tier for highest volume market makers.
     Platinum = 3,
-}
-
-impl Default for IncentiveTier {
-    fn default() -> Self {
-        Self::Bronze
-    }
 }
 
 impl fmt::Display for IncentiveTier {
