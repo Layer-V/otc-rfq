@@ -483,13 +483,9 @@ mod tests {
         #[test]
         fn all_sources_work() {
             for source in ImprovementSource::all() {
-                let improvement = PriceImprovement::calculate(
-                    price(99.0),
-                    price(100.0),
-                    source,
-                    OrderSide::Buy,
-                )
-                .unwrap();
+                let improvement =
+                    PriceImprovement::calculate(price(99.0), price(100.0), source, OrderSide::Buy)
+                        .unwrap();
 
                 assert_eq!(improvement.source(), source);
                 assert!(improvement.is_positive());
