@@ -42,10 +42,12 @@ use crate::domain::value_objects::CounterpartyId;
 use crate::domain::value_objects::ids::RfqId;
 use crate::domain::value_objects::symbol::Symbol;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 /// Default performance threshold for capacity increase (response rate).
 pub const DEFAULT_INCREASE_THRESHOLD: f64 = 0.90;
@@ -168,19 +170,45 @@ pub trait MmCapacityRepository: Send + Sync + fmt::Debug {
 ///
 /// Provides methods to check, reserve, and release capacity for market makers,
 /// as well as dynamic adjustment based on performance metrics.
-#[derive(Debug)]
+///
+/// # Concurrency
+///
+/// The manager uses per-MM locks to ensure atomic check-and-reserve operations
+/// **within a single process/instance**. This prevents race conditions where
+/// concurrent callers could both pass capacity checks and then both reserve,
+/// exceeding limits.
+///
+/// **Note:** Cross-process atomicity requires external coordination (e.g., database
+/// transactions or distributed locks) which is the responsibility of the repository
+/// implementation.
 pub struct CapacityManager<R: MmCapacityRepository> {
     /// Configuration for the capacity manager.
     config: CapacityManagerConfig,
     /// Repository for capacity data.
     repository: Arc<R>,
+    /// Per-MM locks to serialize capacity operations.
+    mm_locks: DashMap<CounterpartyId, Arc<Mutex<()>>>,
 }
 
 impl<R: MmCapacityRepository> CapacityManager<R> {
     /// Creates a new capacity manager.
     #[must_use]
     pub fn new(config: CapacityManagerConfig, repository: Arc<R>) -> Self {
-        Self { config, repository }
+        Self {
+            config,
+            repository,
+            mm_locks: DashMap::new(),
+        }
+    }
+
+    /// Gets or creates a lock for the given market maker.
+    ///
+    /// This ensures that capacity operations for the same MM are serialized.
+    fn get_mm_lock(&self, mm_id: &CounterpartyId) -> Arc<Mutex<()>> {
+        self.mm_locks
+            .entry(mm_id.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     /// Returns the configuration.
@@ -256,6 +284,10 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
 
     /// Reserves capacity for an RFQ broadcast.
     ///
+    /// This operation is atomic per-MM: the capacity check and reservation are
+    /// performed under a lock to prevent race conditions where concurrent callers
+    /// could both pass the check and then both reserve, exceeding limits.
+    ///
     /// # Arguments
     ///
     /// * `mm_id` - Market maker identifier
@@ -277,7 +309,18 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
         instrument: &Symbol,
         notional: Decimal,
     ) -> DomainResult<CapacityReserved> {
-        // First check capacity
+        // Validate arguments before acquiring lock to reduce contention
+        if notional <= Decimal::ZERO {
+            return Err(DomainError::ValidationError(
+                "notional must be positive".to_string(),
+            ));
+        }
+
+        // Acquire per-MM lock to ensure atomic check-and-reserve
+        let lock = self.get_mm_lock(mm_id);
+        let _guard = lock.lock().await;
+
+        // Check capacity under lock (validation is duplicated but harmless)
         let check_result = self.check_capacity(mm_id, instrument, notional).await?;
         if check_result.is_exceeded() {
             return Err(DomainError::CapacityExceeded {
@@ -286,7 +329,7 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
             });
         }
 
-        // Get current state and add reservation
+        // Get current state and add reservation (still under lock)
         let mut state = self.repository.get_state(mm_id).await?;
         let reservation = CapacityReservation::new(rfq_id, instrument.clone(), notional);
         state.add_reservation(reservation)?;
@@ -304,6 +347,9 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
     }
 
     /// Releases capacity when an RFQ expires or completes.
+    ///
+    /// This operation is serialized per-MM to ensure consistency with
+    /// concurrent reserve operations.
     ///
     /// # Arguments
     ///
@@ -323,6 +369,10 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
         rfq_id: &RfqId,
         reason: &str,
     ) -> DomainResult<Option<CapacityReleased>> {
+        // Acquire per-MM lock for consistency with reserve operations
+        let lock = self.get_mm_lock(mm_id);
+        let _guard = lock.lock().await;
+
         let mut state = self.repository.get_state(mm_id).await?;
 
         if let Some(reservation) = state.remove_reservation(rfq_id)? {
@@ -474,7 +524,14 @@ impl<R: MmCapacityRepository> CapacityManager<R> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::useless_vec,
+    clippy::panic,
+    clippy::needless_borrows_for_generic_args
+)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
@@ -860,6 +917,102 @@ mod tests {
 
             let retrieved = manager.get_config(&mm_id).await.unwrap();
             assert_eq!(retrieved.max_concurrent_quotes(), 200);
+        }
+    }
+
+    mod concurrency {
+        use super::*;
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        /// Creates a manager with a small max_concurrent_quotes limit for testing.
+        fn create_limited_manager() -> Arc<CapacityManager<InMemoryCapacityRepository>> {
+            let config = CapacityManagerConfig {
+                default_capacity: MmCapacityConfig::builder()
+                    .max_concurrent_quotes(5) // Small limit to trigger contention
+                    .max_notional(Decimal::from(10_000_000))
+                    .build(),
+                ..CapacityManagerConfig::for_testing()
+            };
+            let repository = Arc::new(InMemoryCapacityRepository::new());
+            Arc::new(CapacityManager::new(config, repository))
+        }
+
+        #[tokio::test]
+        async fn concurrent_reservations_respect_limit() {
+            let manager = create_limited_manager();
+            let mm_id = CounterpartyId::new("mm-test");
+            let symbol = create_test_symbol();
+
+            // Spawn 20 concurrent tasks trying to reserve capacity
+            // Only 5 should succeed (max_concurrent_quotes = 5)
+            let success_count = Arc::new(AtomicU32::new(0));
+            let failure_count = Arc::new(AtomicU32::new(0));
+
+            let mut handles = Vec::new();
+            for i in 0..20 {
+                let manager = Arc::clone(&manager);
+                let mm_id = mm_id.clone();
+                let symbol = symbol.clone();
+                let success_count = Arc::clone(&success_count);
+                let failure_count = Arc::clone(&failure_count);
+
+                handles.push(tokio::spawn(async move {
+                    let rfq_id = RfqId::new_v4();
+                    let result = manager
+                        .reserve_capacity(&mm_id, rfq_id, &symbol, Decimal::from(1_000 * (i + 1)))
+                        .await;
+
+                    match result {
+                        Ok(_) => {
+                            success_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(DomainError::CapacityExceeded { .. }) => {
+                            failure_count.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(e) => panic!("Unexpected error: {e:?}"),
+                    }
+                }));
+            }
+
+            // Wait for all tasks to complete
+            for handle in handles {
+                handle.await.unwrap();
+            }
+
+            // Exactly 5 should succeed, 15 should fail
+            assert_eq!(success_count.load(Ordering::SeqCst), 5);
+            assert_eq!(failure_count.load(Ordering::SeqCst), 15);
+
+            // Verify final state
+            let state = manager.get_state(&mm_id).await.unwrap();
+            assert_eq!(state.active_quotes(), 5);
+        }
+
+        #[tokio::test]
+        async fn different_mms_can_reserve_concurrently() {
+            let manager = create_limited_manager();
+            let symbol = create_test_symbol();
+
+            // Spawn tasks for different MMs - all should succeed
+            let mut handles = Vec::new();
+            for i in 0..10 {
+                let manager = Arc::clone(&manager);
+                let symbol = symbol.clone();
+                let mm_id = CounterpartyId::new(&format!("mm-{i}"));
+
+                handles.push(tokio::spawn(async move {
+                    let rfq_id = RfqId::new_v4();
+                    manager
+                        .reserve_capacity(&mm_id, rfq_id, &symbol, Decimal::from(100_000))
+                        .await
+                }));
+            }
+
+            // All should succeed since they're different MMs
+            for handle in handles {
+                let result = handle.await.unwrap();
+                assert!(result.is_ok());
+            }
         }
     }
 }
