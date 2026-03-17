@@ -22,6 +22,7 @@ pub mod counter_quote;
 pub mod counterparty;
 pub mod delayed_report;
 pub mod mm_capacity;
+pub mod mm_incentive;
 pub mod mm_performance;
 pub mod negotiation;
 pub mod package_quote;
@@ -48,6 +49,10 @@ pub use delayed_report::{DelayedReport, TradeSummary};
 pub use mm_capacity::{
     CapacityAdjustment, CapacityCheckResult, CapacityReservation, DEFAULT_MAX_CONCURRENT_QUOTES,
     DEFAULT_MAX_NOTIONAL_USD, MmCapacityConfig, MmCapacityConfigBuilder, MmCapacityState,
+};
+pub use mm_incentive::{
+    IncentiveConfig, IncentiveConfigBuilder, IncentiveResult, IncentiveTier, PenaltyResult,
+    compute_incentive, evaluate_penalties,
 };
 pub use mm_performance::{
     DEFAULT_MIN_RESPONSE_RATE_PCT, DEFAULT_WINDOW_DAYS, MmPerformanceEvent, MmPerformanceEventKind,
