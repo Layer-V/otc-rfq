@@ -31,10 +31,10 @@ pub enum IncentiveTier {
 impl fmt::Display for IncentiveTier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Bronze => write!(f, "Bronze"),
-            Self::Silver => write!(f, "Silver"),
-            Self::Gold => write!(f, "Gold"),
-            Self::Platinum => write!(f, "Platinum"),
+            Self::Bronze => write!(f, "BRONZE"),
+            Self::Silver => write!(f, "SILVER"),
+            Self::Gold => write!(f, "GOLD"),
+            Self::Platinum => write!(f, "PLATINUM"),
         }
     }
 }
@@ -608,8 +608,8 @@ mod tests {
 
         #[test]
         fn display_format() {
-            assert_eq!(IncentiveTier::Bronze.to_string(), "Bronze");
-            assert_eq!(IncentiveTier::Platinum.to_string(), "Platinum");
+            assert_eq!(IncentiveTier::Bronze.to_string(), "BRONZE");
+            assert_eq!(IncentiveTier::Platinum.to_string(), "PLATINUM");
         }
     }
 
