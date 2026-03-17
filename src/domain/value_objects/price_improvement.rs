@@ -36,7 +36,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Basis points multiplier (1 bp = 0.01% = 0.0001).
-const BPS_MULTIPLIER: Decimal = Decimal::from_parts(10000, 0, 0, false, 0);
+/// Equivalent to `Decimal::new(10_000, 0)` but using `from_parts` for const context.
+const BPS_MULTIPLIER: Decimal = Decimal::from_parts(10_000, 0, 0, false, 0);
 
 /// Source of the reference price used for improvement calculation.
 ///
@@ -143,7 +144,9 @@ impl PriceImprovement {
     ///
     /// # Returns
     ///
-    /// `Some(PriceImprovement)` if calculation succeeds, `None` if reference price is zero.
+    /// `Some(PriceImprovement)` if calculation succeeds, `None` if:
+    /// - Reference price is zero (division by zero protection)
+    /// - Arithmetic overflow occurs during calculation (extremely unlikely with real prices)
     ///
     /// # Formula
     ///
