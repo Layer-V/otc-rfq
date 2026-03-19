@@ -29,6 +29,7 @@ pub mod conflict_resolver;
 pub mod last_look;
 pub mod lock_manager;
 pub mod market_calendar;
+pub mod mm_incentive_service;
 pub mod mm_performance;
 pub mod multi_leg_executor;
 pub mod off_book_executor;
@@ -92,3 +93,4 @@ pub use capacity_manager::{
     CapacityManager, CapacityManagerConfig, DEFAULT_ADJUSTMENT_PERCENTAGE,
     DEFAULT_DECREASE_THRESHOLD, DEFAULT_INCREASE_THRESHOLD, MmCapacityRepository,
 };
+pub use mm_incentive_service::{MmIncentiveError, MmIncentiveResult, MmIncentiveService};

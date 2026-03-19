@@ -27,6 +27,7 @@ use crate::domain::entities::mm_performance::MmPerformanceMetrics;
 use crate::domain::entities::rfq::Rfq;
 use crate::domain::entities::trade::Trade;
 use crate::domain::entities::venue::{Venue, VenueHealth};
+use crate::domain::services::mm_incentive_service::{MmIncentiveError, MmIncentiveService};
 use crate::domain::services::mm_performance::MmPerformanceTracker;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{
@@ -56,6 +57,8 @@ pub struct AppState {
     pub trade_repository: Arc<dyn TradeRepository>,
     /// MM performance tracker (optional — `None` disables MM performance endpoints).
     pub mm_performance_tracker: Option<Arc<MmPerformanceTracker>>,
+    /// MM incentive service (optional — `None` disables MM incentive endpoints).
+    pub mm_incentive_service: Option<Arc<MmIncentiveService>>,
 }
 
 /// Repository for venue persistence.
@@ -847,6 +850,120 @@ pub async fn get_mm_performance(
     }
 
     Ok(Json(MmPerformanceResponse::from(&metrics)))
+}
+
+// ============================================================================
+// MM Incentive Status DTOs
+// ============================================================================
+
+/// Penalty status summary for API response.
+#[derive(Debug, Clone, Serialize)]
+pub struct PenaltyStatusResponse {
+    /// Whether any penalty applies.
+    pub has_penalty: bool,
+    /// Whether capacity should be reduced.
+    pub capacity_reduced: bool,
+    /// Whether tier should be downgraded.
+    pub tier_downgraded: bool,
+    /// Reason for penalty, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// MM incentive status response DTO.
+///
+/// Returns the complete incentive status for a market maker including
+/// tier, rebates, volume metrics, and penalty status.
+#[derive(Debug, Clone, Serialize)]
+pub struct MmIncentiveStatusResponse {
+    /// Market maker identifier.
+    pub mm_id: String,
+    /// Current incentive tier (BRONZE, SILVER, GOLD, PLATINUM).
+    pub current_tier: String,
+    /// Rebate rate for current tier (basis points, negative = rebate to MM).
+    pub rebate_rate_bps: String,
+    /// Monthly trading volume in USD.
+    pub monthly_volume_usd: String,
+    /// Volume needed to reach next tier (null if Platinum).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_to_next_tier_usd: Option<String>,
+    /// Next tier name (null if Platinum).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_tier: Option<String>,
+    /// Rebates earned in current period (USD).
+    pub current_period_rebates_usd: String,
+    /// Penalty status.
+    pub penalty_status: PenaltyStatusResponse,
+    /// Timestamp when this status was computed (ISO 8601).
+    pub computed_at: String,
+}
+
+impl MmIncentiveStatusResponse {
+    /// Creates a response from domain `MmIncentiveStatus`.
+    #[must_use]
+    pub fn from_status(status: &crate::domain::entities::mm_incentive::MmIncentiveStatus) -> Self {
+        Self {
+            mm_id: status.mm_id().to_string(),
+            current_tier: status.current_tier().to_string(),
+            rebate_rate_bps: status.rebate_rate_bps().to_string(),
+            monthly_volume_usd: status.monthly_volume_usd().to_string(),
+            volume_to_next_tier_usd: status.volume_to_next_tier_usd().map(|v| v.to_string()),
+            next_tier: status.next_tier().map(|t| t.to_string()),
+            current_period_rebates_usd: status.current_period_rebates_usd().to_string(),
+            penalty_status: PenaltyStatusResponse {
+                has_penalty: status.penalty_result().has_penalty(),
+                capacity_reduced: status.penalty_result().should_reduce_capacity(),
+                tier_downgraded: status.penalty_result().should_downgrade_tier(),
+                reason: status.penalty_result().reason().map(String::from),
+            },
+            computed_at: status.computed_at().to_iso8601(),
+        }
+    }
+}
+
+// ============================================================================
+// MM Incentive Status Handlers
+// ============================================================================
+
+/// Get incentive status for a specific market maker.
+///
+/// Returns the MM's current tier, rebate rate, volume metrics, and penalty status.
+///
+/// # Errors
+///
+/// Returns `NOT_FOUND` if the MM has no recorded data.
+/// Returns `NOT_IMPLEMENTED` if the incentive service is not configured.
+/// Returns `INTERNAL_ERROR` if status computation fails.
+#[instrument(skip(state))]
+pub async fn get_mm_incentive_status(
+    State(state): State<Arc<AppState>>,
+    Path(mm_id): Path<String>,
+) -> Result<Json<MmIncentiveStatusResponse>, (StatusCode, Json<ErrorResponse>)> {
+    info!("Getting MM incentive status for: {}", mm_id);
+
+    if mm_id.is_empty() {
+        return Err(validation_error("mm_id cannot be empty"));
+    }
+
+    let service = state
+        .mm_incentive_service
+        .as_ref()
+        .ok_or_else(|| not_implemented("mm incentive service not configured"))?;
+
+    let counterparty_id = CounterpartyId::new(&mm_id);
+
+    let status = service
+        .get_status(&counterparty_id)
+        .await
+        .map_err(|e| match &e {
+            MmIncentiveError::MmNotFound(_) => not_found("market maker", &mm_id),
+            MmIncentiveError::Performance(pe) => {
+                error!("Failed to get MM incentive status for {}: {}", mm_id, pe);
+                internal_error(&pe.to_string())
+            }
+        })?;
+
+    Ok(Json(MmIncentiveStatusResponse::from_status(&status)))
 }
 
 // ============================================================================

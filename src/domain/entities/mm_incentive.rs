@@ -3,6 +3,8 @@
 //! Defines incentive tiers, rebate calculations, and penalty evaluation for market makers.
 
 use crate::domain::entities::mm_performance::MmPerformanceMetrics;
+use crate::domain::value_objects::CounterpartyId;
+use crate::domain::value_objects::timestamp::Timestamp;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -81,6 +83,30 @@ impl IncentiveTier {
     #[must_use]
     pub const fn as_u8(&self) -> u8 {
         *self as u8
+    }
+
+    /// Returns the next tier up (for upgrades). Platinum returns `None`.
+    #[must_use]
+    pub const fn next_tier(&self) -> Option<Self> {
+        match self {
+            Self::Bronze => Some(Self::Silver),
+            Self::Silver => Some(Self::Gold),
+            Self::Gold => Some(Self::Platinum),
+            Self::Platinum => None,
+        }
+    }
+
+    /// Returns the volume threshold for this tier.
+    ///
+    /// Bronze has no threshold (returns `Decimal::ZERO`).
+    #[must_use]
+    pub fn threshold(&self, config: &IncentiveConfig) -> Decimal {
+        match self {
+            Self::Bronze => Decimal::ZERO,
+            Self::Silver => config.silver_threshold,
+            Self::Gold => config.gold_threshold,
+            Self::Platinum => config.platinum_threshold,
+        }
     }
 }
 
@@ -486,6 +512,167 @@ pub fn evaluate_penalties(
     }
 }
 
+/// Calculates the volume needed to reach the next tier.
+///
+/// Returns `None` if the MM is already at Platinum tier.
+///
+/// # Arguments
+///
+/// * `current_volume` - Current monthly volume in USD
+/// * `current_tier` - The MM's current tier
+/// * `config` - Incentive program configuration
+///
+/// # Returns
+///
+/// The additional volume needed to reach the next tier, or `None` if already Platinum.
+#[must_use]
+pub fn volume_to_next_tier(
+    current_volume: Decimal,
+    current_tier: IncentiveTier,
+    config: &IncentiveConfig,
+) -> Option<Decimal> {
+    current_tier.next_tier().map(|next| {
+        let next_threshold = next.threshold(config);
+        if current_volume >= next_threshold {
+            Decimal::ZERO
+        } else {
+            next_threshold.saturating_sub(current_volume)
+        }
+    })
+}
+
+// ============================================================================
+// MmIncentiveStatus
+// ============================================================================
+
+/// Complete incentive status for a market maker.
+///
+/// Aggregates tier information, volume metrics, rebates, and penalty status
+/// into a single snapshot for API responses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MmIncentiveStatus {
+    /// Market maker identifier.
+    mm_id: CounterpartyId,
+    /// Current incentive tier.
+    current_tier: IncentiveTier,
+    /// Rebate rate for current tier (basis points).
+    rebate_rate_bps: Decimal,
+    /// Monthly trading volume in USD.
+    monthly_volume_usd: Decimal,
+    /// Volume needed to reach next tier (None if Platinum).
+    volume_to_next_tier_usd: Option<Decimal>,
+    /// Next tier (None if Platinum).
+    next_tier: Option<IncentiveTier>,
+    /// Rebates earned in current period (USD).
+    current_period_rebates_usd: Decimal,
+    /// Penalty evaluation result.
+    penalty_result: PenaltyResult,
+    /// Timestamp when this status was computed.
+    computed_at: Timestamp,
+}
+
+impl MmIncentiveStatus {
+    /// Creates a new incentive status.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        mm_id: CounterpartyId,
+        current_tier: IncentiveTier,
+        rebate_rate_bps: Decimal,
+        monthly_volume_usd: Decimal,
+        volume_to_next_tier_usd: Option<Decimal>,
+        next_tier: Option<IncentiveTier>,
+        current_period_rebates_usd: Decimal,
+        penalty_result: PenaltyResult,
+        computed_at: Timestamp,
+    ) -> Self {
+        Self {
+            mm_id,
+            current_tier,
+            rebate_rate_bps,
+            monthly_volume_usd,
+            volume_to_next_tier_usd,
+            next_tier,
+            current_period_rebates_usd,
+            penalty_result,
+            computed_at,
+        }
+    }
+
+    /// Returns the market maker identifier.
+    #[inline]
+    #[must_use]
+    pub fn mm_id(&self) -> &CounterpartyId {
+        &self.mm_id
+    }
+
+    /// Returns the current incentive tier.
+    #[inline]
+    #[must_use]
+    pub fn current_tier(&self) -> IncentiveTier {
+        self.current_tier
+    }
+
+    /// Returns the rebate rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn rebate_rate_bps(&self) -> Decimal {
+        self.rebate_rate_bps
+    }
+
+    /// Returns the monthly trading volume in USD.
+    #[inline]
+    #[must_use]
+    pub fn monthly_volume_usd(&self) -> Decimal {
+        self.monthly_volume_usd
+    }
+
+    /// Returns the volume needed to reach the next tier (None if Platinum).
+    #[inline]
+    #[must_use]
+    pub fn volume_to_next_tier_usd(&self) -> Option<Decimal> {
+        self.volume_to_next_tier_usd
+    }
+
+    /// Returns the next tier (None if Platinum).
+    #[inline]
+    #[must_use]
+    pub fn next_tier(&self) -> Option<IncentiveTier> {
+        self.next_tier
+    }
+
+    /// Returns the rebates earned in the current period (USD).
+    #[inline]
+    #[must_use]
+    pub fn current_period_rebates_usd(&self) -> Decimal {
+        self.current_period_rebates_usd
+    }
+
+    /// Returns the penalty evaluation result.
+    #[inline]
+    #[must_use]
+    pub fn penalty_result(&self) -> &PenaltyResult {
+        &self.penalty_result
+    }
+
+    /// Returns the timestamp when this status was computed.
+    #[inline]
+    #[must_use]
+    pub fn computed_at(&self) -> Timestamp {
+        self.computed_at
+    }
+}
+
+impl fmt::Display for MmIncentiveStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "IncentiveStatus({} tier={} rebate={:.1}bps vol=${:.0})",
+            self.mm_id, self.current_tier, self.rebate_rate_bps, self.monthly_volume_usd
+        )
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -610,6 +797,140 @@ mod tests {
         fn display_format() {
             assert_eq!(IncentiveTier::Bronze.to_string(), "BRONZE");
             assert_eq!(IncentiveTier::Platinum.to_string(), "PLATINUM");
+        }
+
+        #[test]
+        fn next_tier_returns_higher_tier() {
+            assert_eq!(
+                IncentiveTier::Bronze.next_tier(),
+                Some(IncentiveTier::Silver)
+            );
+            assert_eq!(IncentiveTier::Silver.next_tier(), Some(IncentiveTier::Gold));
+            assert_eq!(
+                IncentiveTier::Gold.next_tier(),
+                Some(IncentiveTier::Platinum)
+            );
+        }
+
+        #[test]
+        fn next_tier_returns_none_for_platinum() {
+            assert_eq!(IncentiveTier::Platinum.next_tier(), None);
+        }
+
+        #[test]
+        fn threshold_returns_correct_values() {
+            let config = default_config();
+            assert_eq!(IncentiveTier::Bronze.threshold(&config), Decimal::ZERO);
+            assert_eq!(
+                IncentiveTier::Silver.threshold(&config),
+                config.silver_threshold
+            );
+            assert_eq!(
+                IncentiveTier::Gold.threshold(&config),
+                config.gold_threshold
+            );
+            assert_eq!(
+                IncentiveTier::Platinum.threshold(&config),
+                config.platinum_threshold
+            );
+        }
+    }
+
+    mod volume_to_next_tier_tests {
+        use super::*;
+
+        #[test]
+        fn returns_none_for_platinum() {
+            let config = default_config();
+            let volume = Decimal::from(100_000_000);
+            assert_eq!(
+                volume_to_next_tier(volume, IncentiveTier::Platinum, &config),
+                None
+            );
+        }
+
+        #[test]
+        fn returns_volume_needed_for_bronze() {
+            let config = default_config();
+            let volume = Decimal::from(500_000);
+            let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
+            // Silver threshold is 1M, so need 500K more
+            assert_eq!(result, Some(config.silver_threshold - volume));
+        }
+
+        #[test]
+        fn returns_zero_when_already_at_threshold() {
+            let config = default_config();
+            let volume = config.silver_threshold;
+            let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
+            assert_eq!(result, Some(Decimal::ZERO));
+        }
+
+        #[test]
+        fn returns_zero_when_above_threshold() {
+            let config = default_config();
+            let volume = config.silver_threshold + Decimal::from(1_000_000);
+            let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
+            assert_eq!(result, Some(Decimal::ZERO));
+        }
+    }
+
+    mod mm_incentive_status_tests {
+        use super::*;
+
+        #[test]
+        fn new_creates_status_with_all_fields() {
+            let config = default_config();
+            let id = mm_id();
+            let tier = IncentiveTier::Silver;
+            let rebate = tier.rebate_bps(&config);
+            let volume = Decimal::from(2_000_000);
+            let vol_to_next = Some(Decimal::from(8_000_000));
+            let next = Some(IncentiveTier::Gold);
+            let rebates = Decimal::from(500);
+            let penalty = PenaltyResult::none();
+            let ts = now();
+
+            let status = MmIncentiveStatus::new(
+                id.clone(),
+                tier,
+                rebate,
+                volume,
+                vol_to_next,
+                next,
+                rebates,
+                penalty.clone(),
+                ts,
+            );
+
+            assert_eq!(status.mm_id(), &id);
+            assert_eq!(status.current_tier(), tier);
+            assert_eq!(status.rebate_rate_bps(), rebate);
+            assert_eq!(status.monthly_volume_usd(), volume);
+            assert_eq!(status.volume_to_next_tier_usd(), vol_to_next);
+            assert_eq!(status.next_tier(), next);
+            assert_eq!(status.current_period_rebates_usd(), rebates);
+            assert!(!status.penalty_result().has_penalty());
+            assert_eq!(status.computed_at(), ts);
+        }
+
+        #[test]
+        fn display_format_includes_key_info() {
+            let status = MmIncentiveStatus::new(
+                mm_id(),
+                IncentiveTier::Gold,
+                Decimal::from(-3),
+                Decimal::from(15_000_000),
+                Some(Decimal::from(35_000_000)),
+                Some(IncentiveTier::Platinum),
+                Decimal::from(1500),
+                PenaltyResult::none(),
+                now(),
+            );
+
+            let display = status.to_string();
+            assert!(display.contains("mm-test"));
+            assert!(display.contains("GOLD"));
         }
     }
 

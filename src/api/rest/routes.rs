@@ -35,8 +35,9 @@
 //! ```
 
 use crate::api::rest::handlers::{
-    AppState, cancel_rfq, create_rfq, get_mm_performance, get_rfq, get_trade, health_check,
-    list_mm_performance, list_rfqs, list_trades, list_venues, update_venue,
+    AppState, cancel_rfq, create_rfq, get_mm_incentive_status, get_mm_performance, get_rfq,
+    get_trade, health_check, list_mm_performance, list_rfqs, list_trades, list_venues,
+    update_venue,
 };
 use axum::{Router, routing::get, routing::put};
 use std::sync::Arc;
@@ -83,13 +84,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_mm_performance))
         .route("/{mm_id}", get(get_mm_performance));
 
+    // MM Incentive routes
+    let mm_incentive_routes =
+        Router::new().route("/{mm_id}/incentive-status", get(get_mm_incentive_status));
+
     // API v1 routes
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
         .nest("/trades", trade_routes)
-        .nest("/mm-performance", mm_performance_routes);
+        .nest("/mm-performance", mm_performance_routes)
+        .nest("/mm", mm_incentive_routes);
 
     // Main router with middleware
     Router::new()
@@ -215,6 +221,7 @@ mod tests {
             venue_repository: Arc::new(MockVenueRepository::default()),
             trade_repository: Arc::new(MockTradeRepository::default()),
             mm_performance_tracker: None,
+            mm_incentive_service: None,
         })
     }
 
