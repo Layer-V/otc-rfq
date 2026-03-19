@@ -35,8 +35,9 @@
 //! ```
 
 use crate::api::rest::handlers::{
-    AppState, cancel_rfq, create_rfq, get_mm_performance, get_rfq, get_trade, health_check,
-    list_mm_performance, list_rfqs, list_trades, list_venues, update_venue,
+    AppState, cancel_rfq, create_rfq, get_mm_incentive_status, get_mm_performance, get_rfq,
+    get_trade, health_check, list_mm_performance, list_rfqs, list_trades, list_venues,
+    update_venue,
 };
 use axum::{Router, routing::get, routing::put};
 use std::sync::Arc;
@@ -83,13 +84,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_mm_performance))
         .route("/{mm_id}", get(get_mm_performance));
 
+    // MM Incentive routes
+    let mm_incentive_routes =
+        Router::new().route("/{mm_id}/incentive-status", get(get_mm_incentive_status));
+
     // API v1 routes
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
         .nest("/trades", trade_routes)
-        .nest("/mm-performance", mm_performance_routes);
+        .nest("/mm-performance", mm_performance_routes)
+        .nest("/mm", mm_incentive_routes);
 
     // Main router with middleware
     Router::new()
@@ -125,12 +131,16 @@ pub fn create_test_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_mm_performance))
         .route("/{mm_id}", get(get_mm_performance));
 
+    let mm_incentive_routes =
+        Router::new().route("/{mm_id}/incentive-status", get(get_mm_incentive_status));
+
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
         .nest("/trades", trade_routes)
-        .nest("/mm-performance", mm_performance_routes);
+        .nest("/mm-performance", mm_performance_routes)
+        .nest("/mm", mm_incentive_routes);
 
     Router::new().nest("/api/v1", api_v1).with_state(state)
 }
@@ -215,6 +225,7 @@ mod tests {
             venue_repository: Arc::new(MockVenueRepository::default()),
             trade_repository: Arc::new(MockTradeRepository::default()),
             mm_performance_tracker: None,
+            mm_incentive_service: None,
         })
     }
 
@@ -382,5 +393,24 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_mm_incentive_status_returns_501_when_service_disabled() {
+        let state = create_test_state();
+        let router = create_test_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/mm/mm-test/incentive-status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Service is None in test state, so endpoint returns 501 Not Implemented
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     }
 }

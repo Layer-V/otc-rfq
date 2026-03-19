@@ -221,6 +221,7 @@ fn start_rest_server(
             venue_repository,
             trade_repository,
             mm_performance_tracker,
+            mm_incentive_service: None, // TODO: Initialize when VolumeTracker is available
         });
 
         let router = create_router(state);
