@@ -1146,7 +1146,10 @@ mod tests {
 
             assert!(result.has_penalty());
             assert!(result.should_reduce_capacity());
-            assert_eq!(result.capacity_reduction_pct(), config.capacity_penalty_pct);
+            assert_eq!(
+                result.capacity_reduction_pct(),
+                config.capacity_penalty_pct()
+            );
             assert!(!result.should_downgrade_tier());
         }
 
