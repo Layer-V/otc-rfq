@@ -131,12 +131,16 @@ pub fn create_test_router(state: Arc<AppState>) -> Router {
         .route("/", get(list_mm_performance))
         .route("/{mm_id}", get(get_mm_performance));
 
+    let mm_incentive_routes =
+        Router::new().route("/{mm_id}/incentive-status", get(get_mm_incentive_status));
+
     let api_v1 = Router::new()
         .route("/health", get(health_check))
         .nest("/rfqs", rfq_routes)
         .nest("/venues", venue_routes)
         .nest("/trades", trade_routes)
-        .nest("/mm-performance", mm_performance_routes);
+        .nest("/mm-performance", mm_performance_routes)
+        .nest("/mm", mm_incentive_routes);
 
     Router::new().nest("/api/v1", api_v1).with_state(state)
 }
@@ -389,5 +393,24 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_mm_incentive_status_returns_501_when_service_disabled() {
+        let state = create_test_state();
+        let router = create_test_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/mm/mm-test/incentive-status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Service is None in test state, so endpoint returns 501 Not Implemented
+        assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     }
 }

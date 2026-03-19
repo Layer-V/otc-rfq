@@ -533,10 +533,14 @@ pub fn volume_to_next_tier(
 ) -> Option<Decimal> {
     current_tier.next_tier().map(|next| {
         let next_threshold = next.threshold(config);
+        // Use checked_sub per project financial math conventions.
+        // Returns ZERO if already at or above threshold, otherwise the difference.
         if current_volume >= next_threshold {
             Decimal::ZERO
         } else {
-            next_threshold.saturating_sub(current_volume)
+            next_threshold
+                .checked_sub(current_volume)
+                .unwrap_or(Decimal::ZERO)
         }
     })
 }

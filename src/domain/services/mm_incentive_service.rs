@@ -163,7 +163,9 @@ impl MmIncentiveService {
 )]
 mod tests {
     use super::*;
-    use crate::domain::entities::mm_performance::{MmPerformanceEvent, MmPerformanceEventKind};
+    use crate::domain::entities::mm_performance::{
+        DEFAULT_WINDOW_DAYS, MmPerformanceEvent, MmPerformanceEventKind,
+    };
     use crate::domain::services::mm_performance::MmPerformanceRepository;
     use async_trait::async_trait;
     use dashmap::DashMap;
@@ -231,7 +233,7 @@ mod tests {
         let repo = Arc::new(MockMmPerformanceRepo::default());
         let tracker = Arc::new(MmPerformanceTracker::new(
             Arc::clone(&repo) as Arc<dyn MmPerformanceRepository>,
-            7,
+            DEFAULT_WINDOW_DAYS,
         ));
         let config = IncentiveConfig::default();
         let service = MmIncentiveService::new(tracker, config);
