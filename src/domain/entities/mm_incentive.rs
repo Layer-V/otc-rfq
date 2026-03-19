@@ -248,14 +248,14 @@ impl IncentiveConfig {
     /// Returns the low response rate penalty threshold (percentage).
     #[inline]
     #[must_use]
-    pub fn low_response_rate_pct(&self) -> f64 {
+    pub const fn low_response_rate_pct(&self) -> f64 {
         self.low_response_rate_pct
     }
 
     /// Returns the high reject rate penalty threshold (percentage).
     #[inline]
     #[must_use]
-    pub fn high_reject_rate_pct(&self) -> f64 {
+    pub const fn high_reject_rate_pct(&self) -> f64 {
         self.high_reject_rate_pct
     }
 
