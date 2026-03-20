@@ -45,11 +45,11 @@ impl IncentiveTier {
     /// Determines the tier based on monthly volume.
     #[must_use]
     pub fn from_volume(volume: Decimal, config: &IncentiveConfig) -> Self {
-        if volume >= config.platinum_threshold {
+        if volume >= config.platinum_threshold() {
             Self::Platinum
-        } else if volume >= config.gold_threshold {
+        } else if volume >= config.gold_threshold() {
             Self::Gold
-        } else if volume >= config.silver_threshold {
+        } else if volume >= config.silver_threshold() {
             Self::Silver
         } else {
             Self::Bronze
@@ -60,10 +60,10 @@ impl IncentiveTier {
     #[must_use]
     pub fn rebate_bps(&self, config: &IncentiveConfig) -> Decimal {
         match self {
-            Self::Bronze => config.bronze_rebate_bps,
-            Self::Silver => config.silver_rebate_bps,
-            Self::Gold => config.gold_rebate_bps,
-            Self::Platinum => config.platinum_rebate_bps,
+            Self::Bronze => config.bronze_rebate_bps(),
+            Self::Silver => config.silver_rebate_bps(),
+            Self::Gold => config.gold_rebate_bps(),
+            Self::Platinum => config.platinum_rebate_bps(),
         }
     }
 
@@ -103,9 +103,9 @@ impl IncentiveTier {
     pub fn threshold(&self, config: &IncentiveConfig) -> Decimal {
         match self {
             Self::Bronze => Decimal::ZERO,
-            Self::Silver => config.silver_threshold,
-            Self::Gold => config.gold_threshold,
-            Self::Platinum => config.platinum_threshold,
+            Self::Silver => config.silver_threshold(),
+            Self::Gold => config.gold_threshold(),
+            Self::Platinum => config.platinum_threshold(),
         }
     }
 }
@@ -117,29 +117,29 @@ impl IncentiveTier {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IncentiveConfig {
     /// Volume threshold for Silver tier (USD).
-    pub silver_threshold: Decimal,
+    silver_threshold: Decimal,
     /// Volume threshold for Gold tier (USD).
-    pub gold_threshold: Decimal,
+    gold_threshold: Decimal,
     /// Volume threshold for Platinum tier (USD).
-    pub platinum_threshold: Decimal,
+    platinum_threshold: Decimal,
     /// Rebate rate for Bronze tier (basis points).
-    pub bronze_rebate_bps: Decimal,
+    bronze_rebate_bps: Decimal,
     /// Rebate rate for Silver tier (basis points).
-    pub silver_rebate_bps: Decimal,
+    silver_rebate_bps: Decimal,
     /// Rebate rate for Gold tier (basis points).
-    pub gold_rebate_bps: Decimal,
+    gold_rebate_bps: Decimal,
     /// Rebate rate for Platinum tier (basis points).
-    pub platinum_rebate_bps: Decimal,
+    platinum_rebate_bps: Decimal,
     /// Spread threshold for bonus (basis points vs reference).
-    pub spread_bonus_threshold_bps: Decimal,
+    spread_bonus_threshold_bps: Decimal,
     /// Extra rebate for tight spreads (basis points).
-    pub spread_bonus_bps: Decimal,
+    spread_bonus_bps: Decimal,
     /// Response rate below this triggers penalty (percentage).
-    pub low_response_rate_pct: f64,
+    low_response_rate_pct: f64,
     /// Reject rate above this triggers penalty (percentage).
-    pub high_reject_rate_pct: f64,
+    high_reject_rate_pct: f64,
     /// Capacity reduction for penalties (as decimal, e.g., 0.25 = 25%).
-    pub capacity_penalty_pct: Decimal,
+    capacity_penalty_pct: Decimal,
 }
 
 impl Default for IncentiveConfig {
@@ -180,6 +180,90 @@ impl IncentiveConfig {
     /// Creates a builder for constructing an incentive configuration.
     pub fn builder() -> IncentiveConfigBuilder {
         IncentiveConfigBuilder::default()
+    }
+
+    /// Returns the Silver tier volume threshold.
+    #[inline]
+    #[must_use]
+    pub fn silver_threshold(&self) -> Decimal {
+        self.silver_threshold
+    }
+
+    /// Returns the Gold tier volume threshold.
+    #[inline]
+    #[must_use]
+    pub fn gold_threshold(&self) -> Decimal {
+        self.gold_threshold
+    }
+
+    /// Returns the Platinum tier volume threshold.
+    #[inline]
+    #[must_use]
+    pub fn platinum_threshold(&self) -> Decimal {
+        self.platinum_threshold
+    }
+
+    /// Returns the Bronze tier rebate rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn bronze_rebate_bps(&self) -> Decimal {
+        self.bronze_rebate_bps
+    }
+
+    /// Returns the Silver tier rebate rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn silver_rebate_bps(&self) -> Decimal {
+        self.silver_rebate_bps
+    }
+
+    /// Returns the Gold tier rebate rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn gold_rebate_bps(&self) -> Decimal {
+        self.gold_rebate_bps
+    }
+
+    /// Returns the Platinum tier rebate rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn platinum_rebate_bps(&self) -> Decimal {
+        self.platinum_rebate_bps
+    }
+
+    /// Returns the spread bonus threshold in basis points.
+    #[inline]
+    #[must_use]
+    pub fn spread_bonus_threshold_bps(&self) -> Decimal {
+        self.spread_bonus_threshold_bps
+    }
+
+    /// Returns the spread bonus rate in basis points.
+    #[inline]
+    #[must_use]
+    pub fn spread_bonus_bps(&self) -> Decimal {
+        self.spread_bonus_bps
+    }
+
+    /// Returns the low response rate penalty threshold (percentage).
+    #[inline]
+    #[must_use]
+    pub const fn low_response_rate_pct(&self) -> f64 {
+        self.low_response_rate_pct
+    }
+
+    /// Returns the high reject rate penalty threshold (percentage).
+    #[inline]
+    #[must_use]
+    pub const fn high_reject_rate_pct(&self) -> f64 {
+        self.high_reject_rate_pct
+    }
+
+    /// Returns the capacity penalty percentage.
+    #[inline]
+    #[must_use]
+    pub fn capacity_penalty_pct(&self) -> Decimal {
+        self.capacity_penalty_pct
     }
 }
 
@@ -436,7 +520,7 @@ pub fn compute_incentive(
 
     // Check if spread qualifies for bonus
     let spread_bonus_bps = match spread_vs_reference_bps {
-        Some(spread) if spread <= config.spread_bonus_threshold_bps => config.spread_bonus_bps,
+        Some(spread) if spread <= config.spread_bonus_threshold_bps() => config.spread_bonus_bps(),
         _ => Decimal::ZERO,
     };
 
@@ -476,23 +560,25 @@ pub fn evaluate_penalties(
 
     // Check response rate
     if let Some(response_rate) = metrics.response_rate_pct()
-        && response_rate < config.low_response_rate_pct
+        && response_rate < config.low_response_rate_pct()
     {
         should_reduce_capacity = true;
         reasons.push(format!(
             "low response rate ({:.1}% < {:.1}%)",
-            response_rate, config.low_response_rate_pct
+            response_rate,
+            config.low_response_rate_pct()
         ));
     }
 
     // Check reject rate
     if let Some(reject_rate) = metrics.reject_rate_pct()
-        && reject_rate > config.high_reject_rate_pct
+        && reject_rate > config.high_reject_rate_pct()
     {
         should_downgrade_tier = true;
         reasons.push(format!(
             "high reject rate ({:.1}% > {:.1}%)",
-            reject_rate, config.high_reject_rate_pct
+            reject_rate,
+            config.high_reject_rate_pct()
         ));
     }
 
@@ -502,7 +588,7 @@ pub fn evaluate_penalties(
         PenaltyResult {
             should_reduce_capacity,
             capacity_reduction_pct: if should_reduce_capacity {
-                config.capacity_penalty_pct
+                config.capacity_penalty_pct()
             } else {
                 Decimal::ZERO
             },
@@ -766,19 +852,19 @@ mod tests {
             let config = default_config();
             assert_eq!(
                 IncentiveTier::Bronze.rebate_bps(&config),
-                config.bronze_rebate_bps
+                config.bronze_rebate_bps()
             );
             assert_eq!(
                 IncentiveTier::Silver.rebate_bps(&config),
-                config.silver_rebate_bps
+                config.silver_rebate_bps()
             );
             assert_eq!(
                 IncentiveTier::Gold.rebate_bps(&config),
-                config.gold_rebate_bps
+                config.gold_rebate_bps()
             );
             assert_eq!(
                 IncentiveTier::Platinum.rebate_bps(&config),
-                config.platinum_rebate_bps
+                config.platinum_rebate_bps()
             );
         }
 
@@ -827,15 +913,15 @@ mod tests {
             assert_eq!(IncentiveTier::Bronze.threshold(&config), Decimal::ZERO);
             assert_eq!(
                 IncentiveTier::Silver.threshold(&config),
-                config.silver_threshold
+                config.silver_threshold()
             );
             assert_eq!(
                 IncentiveTier::Gold.threshold(&config),
-                config.gold_threshold
+                config.gold_threshold()
             );
             assert_eq!(
                 IncentiveTier::Platinum.threshold(&config),
-                config.platinum_threshold
+                config.platinum_threshold()
             );
         }
     }
@@ -859,13 +945,13 @@ mod tests {
             let volume = Decimal::from(500_000);
             let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
             // Silver threshold is 1M, so need 500K more
-            assert_eq!(result, Some(config.silver_threshold - volume));
+            assert_eq!(result, Some(config.silver_threshold() - volume));
         }
 
         #[test]
         fn returns_zero_when_already_at_threshold() {
             let config = default_config();
-            let volume = config.silver_threshold;
+            let volume = config.silver_threshold();
             let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
             assert_eq!(result, Some(Decimal::ZERO));
         }
@@ -873,7 +959,7 @@ mod tests {
         #[test]
         fn returns_zero_when_above_threshold() {
             let config = default_config();
-            let volume = config.silver_threshold + Decimal::from(1_000_000);
+            let volume = config.silver_threshold() + Decimal::from(1_000_000);
             let result = volume_to_next_tier(volume, IncentiveTier::Bronze, &config);
             assert_eq!(result, Some(Decimal::ZERO));
         }
@@ -944,11 +1030,11 @@ mod tests {
         #[test]
         fn default_config_has_sensible_values() {
             let config = default_config();
-            assert!(config.silver_threshold > Decimal::ZERO);
-            assert!(config.gold_threshold > config.silver_threshold);
-            assert!(config.platinum_threshold > config.gold_threshold);
+            assert!(config.silver_threshold() > Decimal::ZERO);
+            assert!(config.gold_threshold() > config.silver_threshold());
+            assert!(config.platinum_threshold() > config.gold_threshold());
             // Rebates should be negative (payment to MM)
-            assert!(config.bronze_rebate_bps < Decimal::ZERO);
+            assert!(config.bronze_rebate_bps() < Decimal::ZERO);
         }
 
         #[test]
@@ -958,8 +1044,8 @@ mod tests {
                 .gold_threshold(Decimal::from(20_000_000))
                 .build();
 
-            assert_eq!(config.silver_threshold, Decimal::from(2_000_000));
-            assert_eq!(config.gold_threshold, Decimal::from(20_000_000));
+            assert_eq!(config.silver_threshold(), Decimal::from(2_000_000));
+            assert_eq!(config.gold_threshold(), Decimal::from(20_000_000));
         }
     }
 
@@ -973,7 +1059,7 @@ mod tests {
             let result = compute_incentive(IncentiveTier::Bronze, notional, None, &config);
 
             assert_eq!(result.tier(), IncentiveTier::Bronze);
-            assert_eq!(result.base_rebate_bps(), config.bronze_rebate_bps);
+            assert_eq!(result.base_rebate_bps(), config.bronze_rebate_bps());
             assert_eq!(result.spread_bonus_bps(), Decimal::ZERO);
         }
 
@@ -985,10 +1071,10 @@ mod tests {
             let result =
                 compute_incentive(IncentiveTier::Gold, notional, Some(tight_spread), &config);
 
-            assert_eq!(result.spread_bonus_bps(), config.spread_bonus_bps);
+            assert_eq!(result.spread_bonus_bps(), config.spread_bonus_bps());
             assert_eq!(
                 result.total_rebate_bps(),
-                config.gold_rebate_bps + config.spread_bonus_bps
+                config.gold_rebate_bps() + config.spread_bonus_bps()
             );
         }
 
@@ -1010,7 +1096,7 @@ mod tests {
             let result = compute_incentive(IncentiveTier::Bronze, notional, None, &config);
 
             // -1.0 bps on 1M = -100 USD
-            let expected = notional * config.bronze_rebate_bps / Decimal::from(10000);
+            let expected = notional * config.bronze_rebate_bps() / Decimal::from(10000);
             assert_eq!(result.rebate_amount(), expected);
         }
     }
@@ -1060,7 +1146,10 @@ mod tests {
 
             assert!(result.has_penalty());
             assert!(result.should_reduce_capacity());
-            assert_eq!(result.capacity_reduction_pct(), config.capacity_penalty_pct);
+            assert_eq!(
+                result.capacity_reduction_pct(),
+                config.capacity_penalty_pct()
+            );
             assert!(!result.should_downgrade_tier());
         }
 
