@@ -44,6 +44,7 @@ pub mod report_publisher;
 pub mod report_scheduler;
 pub mod risk_check;
 pub mod settlement;
+pub mod streaming_quote;
 pub mod theoretical_pricer;
 
 pub use crate::domain::events::conflict_events::{ConflictType, Resolution};
@@ -94,3 +95,6 @@ pub use capacity_manager::{
     DEFAULT_DECREASE_THRESHOLD, DEFAULT_INCREASE_THRESHOLD, MmCapacityRepository,
 };
 pub use mm_incentive_service::{MmIncentiveError, MmIncentiveResult, MmIncentiveService};
+pub use streaming_quote::{
+    StreamingQuoteRejectReason, StreamingQuoteResult, StreamingQuoteService,
+};

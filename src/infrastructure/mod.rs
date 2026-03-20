@@ -29,10 +29,15 @@ pub mod http_clients;
 pub mod last_look;
 pub mod persistence;
 pub mod sbe;
+pub mod streaming;
 pub mod venues;
 
 pub use last_look::{
     CompositeLastLookService, FixLastLookClient, GrpcLastLookClient, WebSocketLastLookClient,
 };
 pub use persistence as repos;
+pub use streaming::{
+    CompositeStreamingQuoteService, FixStreamingClient, GrpcStreamingClient,
+    WebSocketStreamingClient,
+};
 pub use venues as venue_adapters;
