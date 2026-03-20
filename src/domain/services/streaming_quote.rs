@@ -7,7 +7,7 @@
 //!
 //! # Architecture
 //!
-//! The streaming quote service follows the same pattern as [`LastLookService`]:
+//! The streaming quote service follows the same pattern as `LastLookService`:
 //! - A domain trait defines the protocol-agnostic interface
 //! - Infrastructure implementations handle WebSocket, gRPC, and FIX protocols
 //! - A composite service routes to the appropriate channel per venue

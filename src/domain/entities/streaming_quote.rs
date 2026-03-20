@@ -255,7 +255,9 @@ impl StreamingQuote {
 
     /// Creates a streaming quote with explicit timestamps.
     ///
-    /// Used when reconstructing quotes from storage or when MM provides timestamp.
+    /// Used when MM provides its own timestamp. Note that a new quote ID is
+    /// always generated; if you need to preserve an existing ID, use a
+    /// different constructor.
     ///
     /// # Errors
     ///
@@ -359,8 +361,8 @@ impl StreamingQuote {
     #[must_use]
     pub fn is_stale(&self) -> bool {
         let now = Timestamp::now();
-        // Safe cast: TTL is always reasonable (< i64::MAX milliseconds)
-        let ttl_i64 = self.ttl_ms as i64;
+        // Convert TTL to i64 safely; clamp absurdly large values to i64::MAX.
+        let ttl_i64 = i64::try_from(self.ttl_ms).unwrap_or(i64::MAX);
         let expiry = self.received_at.add_millis(ttl_i64);
         now > expiry
     }
@@ -419,7 +421,7 @@ impl StreamingQuote {
         let two = Decimal::new(2, 0);
         let mid = sum.checked_div(two)?;
 
-        Price::new(mid.to_string().parse::<f64>().ok()?).ok()
+        Price::from_decimal(mid).ok()
     }
 
     /// Returns the time remaining until this quote expires, in milliseconds.
@@ -428,8 +430,8 @@ impl StreamingQuote {
     #[must_use]
     pub fn time_remaining_ms(&self) -> u64 {
         let now = Timestamp::now();
-        // Safe cast: TTL is always reasonable (< i64::MAX milliseconds)
-        let ttl_i64 = self.ttl_ms as i64;
+        // Convert TTL to i64 safely; clamp absurdly large values to i64::MAX.
+        let ttl_i64 = i64::try_from(self.ttl_ms).unwrap_or(i64::MAX);
         let expiry = self.received_at.add_millis(ttl_i64);
 
         if now >= expiry {
@@ -585,8 +587,26 @@ impl StreamingQuoteConfigBuilder {
     }
 
     /// Builds the configuration.
+    ///
+    /// Enforces basic invariants to avoid constructing invalid configs
+    /// (e.g., zero TTL or zero `max_quotes_per_second`).
     #[must_use]
-    pub fn build(self) -> StreamingQuoteConfig {
+    pub fn build(mut self) -> StreamingQuoteConfig {
+        // Ensure a positive default TTL.
+        if self.config.default_ttl_ms == 0 {
+            self.config.default_ttl_ms = 1;
+        }
+
+        // Ensure a positive max quotes per second to avoid "always rate-limited".
+        if self.config.max_quotes_per_second == 0 {
+            self.config.max_quotes_per_second = 1;
+        }
+
+        // Ensure staleness check interval is non-zero.
+        if self.config.staleness_check_interval_ms == 0 {
+            self.config.staleness_check_interval_ms = self.config.default_ttl_ms;
+        }
+
         self.config
     }
 }
@@ -697,7 +717,7 @@ impl BestQuote {
         let two = Decimal::new(2, 0);
         let mid = sum.checked_div(two)?;
 
-        Price::new(mid.to_string().parse::<f64>().ok()?).ok()
+        Price::from_decimal(mid).ok()
     }
 }
 

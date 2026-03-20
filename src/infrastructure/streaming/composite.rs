@@ -239,13 +239,21 @@ impl CompositeStreamingQuoteService {
             return Err(StreamingQuoteRejectReason::stale());
         }
 
-        if let Some(spread_bps) = quote.spread_bps()
-            && spread_bps > self.config.max_spread_bps()
-        {
-            return Err(StreamingQuoteRejectReason::invalid_spread(
-                spread_bps,
-                self.config.max_spread_bps(),
-            ));
+        match quote.spread_bps() {
+            Some(spread_bps) if spread_bps > self.config.max_spread_bps() => {
+                return Err(StreamingQuoteRejectReason::invalid_spread(
+                    spread_bps,
+                    self.config.max_spread_bps(),
+                ));
+            }
+            None => {
+                // Treat uncomputable spread (overflow) as invalid
+                return Err(StreamingQuoteRejectReason::invalid_spread(
+                    self.config.max_spread_bps(),
+                    self.config.max_spread_bps(),
+                ));
+            }
+            _ => {}
         }
 
         let min_size = self.config.min_size();
@@ -408,13 +416,16 @@ impl StreamingQuoteService for CompositeStreamingQuoteService {
     fn active_instruments(&self) -> Vec<Instrument> {
         self.books
             .iter()
-            .filter(|book| !book.quotes.is_empty())
+            .filter(|book| book.quotes.values().any(|q| !q.is_stale()))
             .map(|book| book.key().clone())
             .collect()
     }
 
     fn total_active_quotes(&self) -> usize {
-        self.books.iter().map(|book| book.quotes.len()).sum()
+        self.books
+            .iter()
+            .map(|book| book.quotes.values().filter(|q| !q.is_stale()).count())
+            .sum()
     }
 }
 
