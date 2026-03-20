@@ -205,52 +205,52 @@ impl ReportExporter for IncentiveReportExporter {
         if let Some(penalties) = report.penalties()
             && penalties.has_penalty()
         {
+            current_layer.use_text(
+                "Penalties",
+                16.0,
+                Mm(left_margin),
+                Mm(y_position),
+                &font_bold,
+            );
+            y_position -= 10.0;
+
+            if let Some(reason) = penalties.reason() {
                 current_layer.use_text(
-                    "Penalties",
-                    16.0,
+                    format!("Reason: {}", reason),
+                    11.0,
                     Mm(left_margin),
                     Mm(y_position),
-                    &font_bold,
+                    &font,
                 );
-                y_position -= 10.0;
+                y_position -= 5.0;
+            }
 
-                if let Some(reason) = penalties.reason() {
-                    current_layer.use_text(
-                        format!("Reason: {}", reason),
-                        11.0,
-                        Mm(left_margin),
-                        Mm(y_position),
-                        &font,
-                    );
-                    y_position -= 5.0;
-                }
+            if penalties.should_reduce_capacity() {
+                current_layer.use_text(
+                    format!(
+                        "Capacity Reduction: {:.1}%",
+                        penalties.capacity_reduction_pct().to_f64().unwrap_or(0.0) * 100.0
+                    ),
+                    11.0,
+                    Mm(left_margin),
+                    Mm(y_position),
+                    &font,
+                );
+                y_position -= 5.0;
+            }
 
-                if penalties.should_reduce_capacity() {
-                    current_layer.use_text(
-                        format!(
-                            "Capacity Reduction: {:.1}%",
-                            penalties.capacity_reduction_pct().to_f64().unwrap_or(0.0) * 100.0
-                        ),
-                        11.0,
-                        Mm(left_margin),
-                        Mm(y_position),
-                        &font,
-                    );
-                    y_position -= 5.0;
-                }
+            if penalties.should_downgrade_tier() {
+                current_layer.use_text(
+                    "Tier Downgrade: Yes",
+                    11.0,
+                    Mm(left_margin),
+                    Mm(y_position),
+                    &font,
+                );
+                y_position -= 5.0;
+            }
 
-                if penalties.should_downgrade_tier() {
-                    current_layer.use_text(
-                        "Tier Downgrade: Yes",
-                        11.0,
-                        Mm(left_margin),
-                        Mm(y_position),
-                        &font,
-                    );
-                    y_position -= 5.0;
-                }
-
-                y_position -= 10.0;
+            y_position -= 10.0;
         }
 
         // Trade details section (if detailed report)
