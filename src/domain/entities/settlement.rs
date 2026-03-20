@@ -9,9 +9,9 @@ use crate::domain::entities::mm_incentive::IncentiveResult;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{CounterpartyId, TradeId};
 use chrono::{TimeZone, Utc};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{collections::HashSet, fmt};
 use uuid::Uuid;
 
 // ============================================================================
@@ -58,12 +58,12 @@ impl fmt::Display for SettlementId {
 /// # Invariants
 ///
 /// - Start timestamp must be before end timestamp
-/// - Period boundaries are inclusive [start, end]
+/// - Period boundaries are half-open `[start, end)`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettlementPeriod {
     /// Start of the period (inclusive).
     start: Timestamp,
-    /// End of the period (inclusive).
+    /// End of the period (exclusive).
     end: Timestamp,
 }
 
@@ -73,7 +73,7 @@ impl SettlementPeriod {
     /// # Arguments
     ///
     /// * `start` - Start timestamp (inclusive)
-    /// * `end` - End timestamp (inclusive)
+    /// * `end` - End timestamp (exclusive)
     ///
     /// # Returns
     ///
@@ -102,7 +102,7 @@ impl SettlementPeriod {
     ///
     /// ```ignore
     /// let period = SettlementPeriod::from_month_year(2026, 3)?;
-    /// // Covers March 1, 2026 00:00:00 to March 31, 2026 23:59:59
+    /// // Covers March 1, 2026 00:00:00 to April 1, 2026 00:00:00 (exclusive)
     /// ```
     #[must_use]
     pub fn from_month_year(year: i32, month: u32) -> Option<Self> {
@@ -110,38 +110,24 @@ impl SettlementPeriod {
             return None;
         }
 
-        // First day of month at 00:00:00
-        let start_dt = Utc
+        let next_month = if month == 12 { 1 } else { month + 1 };
+        let next_year = if month == 12 {
+            year.checked_add(1)?
+        } else {
+            year
+        };
+
+        let start = Utc
             .with_ymd_and_hms(year, month, 1, 0, 0, 0)
             .single()
             .and_then(|dt| Timestamp::from_millis(dt.timestamp_millis()))?;
 
-        // Last day of month at 23:59:59
-        let days_in_month = Self::days_in_month(year, month)?;
-        let end_dt = Utc
-            .with_ymd_and_hms(year, month, days_in_month, 23, 59, 59)
+        let end = Utc
+            .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
             .single()
             .and_then(|dt| Timestamp::from_millis(dt.timestamp_millis()))?;
 
-        let start = start_dt;
-        let end = end_dt;
-
         Some(Self { start, end })
-    }
-
-    /// Returns the number of days in a given month.
-    #[must_use]
-    fn days_in_month(year: i32, month: u32) -> Option<u32> {
-        match month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => Some(31),
-            4 | 6 | 9 | 11 => Some(30),
-            2 => {
-                // Leap year calculation
-                let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-                Some(if is_leap { 29 } else { 28 })
-            }
-            _ => None,
-        }
     }
 
     /// Returns the start timestamp.
@@ -166,17 +152,23 @@ impl SettlementPeriod {
     ///
     /// # Returns
     ///
-    /// `true` if the timestamp is within [start, end] inclusive.
+    /// `true` if the timestamp is within `[start, end)`.
     #[inline]
     #[must_use]
     pub fn contains(&self, timestamp: Timestamp) -> bool {
-        timestamp >= self.start && timestamp <= self.end
+        timestamp >= self.start && timestamp < self.end
     }
 
-    /// Checks if the period has ended (current time is after end).
+    /// Checks if the period has ended (current time is at or after end).
     #[must_use]
     pub fn is_complete(&self) -> bool {
-        Timestamp::now() > self.end
+        Timestamp::now() >= self.end
+    }
+}
+
+impl fmt::Display for SettlementPeriod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start.to_iso8601(), self.end.to_iso8601())
     }
 }
 
@@ -257,6 +249,30 @@ impl IncentiveEvent {
         }
     }
 
+    /// Returns the trade ID from the event.
+    #[must_use]
+    pub fn trade_id(&self) -> &TradeId {
+        match self {
+            Self::TradeIncentiveEarned { trade_id, .. } => trade_id,
+        }
+    }
+
+    /// Returns the incentive calculation result from the event.
+    #[must_use]
+    pub fn result(&self) -> &IncentiveResult {
+        match self {
+            Self::TradeIncentiveEarned { result, .. } => result,
+        }
+    }
+
+    /// Returns the trade notional from the event.
+    #[must_use]
+    pub fn notional(&self) -> Decimal {
+        match self {
+            Self::TradeIncentiveEarned { notional, .. } => *notional,
+        }
+    }
+
     /// Returns the timestamp from the event.
     #[must_use]
     pub fn timestamp(&self) -> Timestamp {
@@ -296,6 +312,8 @@ pub struct IncentiveSettlement {
     net_payout_usd: Decimal,
     /// Events that have been applied to this settlement.
     events: Vec<IncentiveEvent>,
+    /// Trade IDs that have already been applied.
+    applied_trade_ids: HashSet<TradeId>,
     /// Version number (incremented with each event).
     version: u64,
 }
@@ -320,6 +338,7 @@ impl IncentiveSettlement {
             total_bonuses_usd: Decimal::ZERO,
             net_payout_usd: Decimal::ZERO,
             events: Vec::new(),
+            applied_trade_ids: HashSet::new(),
             version: 0,
         }
     }
@@ -409,38 +428,70 @@ impl IncentiveSettlement {
     /// # Arguments
     ///
     /// * `event` - The incentive event to apply
-    pub fn apply_event(&mut self, event: IncentiveEvent) {
-        match &event {
-            IncentiveEvent::TradeIncentiveEarned {
-                result, notional, ..
-            } => {
-                // Increment trade count (checked)
-                self.total_trades = self.total_trades.saturating_add(1);
-
-                // Add to total volume (checked)
-                self.total_volume_usd = self.total_volume_usd.saturating_add(*notional);
-
-                // Add base rebate (negative value)
-                let base_rebate = result.rebate_amount();
-                self.total_base_rebates_usd =
-                    self.total_base_rebates_usd.saturating_add(base_rebate);
-
-                // Add spread bonus if any
-                let bonus_amount = if !result.spread_bonus_bps().is_zero() {
-                    // Calculate bonus amount: notional * spread_bonus_bps / 10000
-                    let bps_divisor = Decimal::from(10000);
-                    let product = notional.saturating_mul(result.spread_bonus_bps());
-                    product.checked_div(bps_divisor).unwrap_or(Decimal::ZERO)
-                } else {
-                    Decimal::ZERO
-                };
-                self.total_bonuses_usd = self.total_bonuses_usd.saturating_add(bonus_amount);
-            }
+    ///
+    /// # Errors
+    ///
+    /// Returns `SettlementError::SettlementClosed` if the settlement is not open.
+    /// Returns `SettlementError::MismatchedMarketMaker` if the event MM does not match.
+    /// Returns `SettlementError::Overflow` if any accumulated monetary value overflows.
+    pub fn apply_event(&mut self, event: IncentiveEvent) -> Result<(), SettlementError> {
+        if self.status != SettlementStatus::Open {
+            return Err(SettlementError::SettlementClosed {
+                status: self.status,
+            });
         }
 
+        let mm_id = event.mm_id().clone();
+        if mm_id != self.mm_id {
+            return Err(SettlementError::MismatchedMarketMaker {
+                expected: self.mm_id.to_string(),
+                actual: mm_id.to_string(),
+            });
+        }
+
+        let trade_id = *event.trade_id();
+        if self.applied_trade_ids.contains(&trade_id) {
+            return Ok(());
+        }
+
+        let notional = event.notional();
+        let result = event.result();
+
+        // Increment trade count (checked)
+        self.total_trades = self
+            .total_trades
+            .checked_add(1)
+            .ok_or(SettlementError::Overflow("total_trades"))?;
+
+        // Add to total volume (checked)
+        self.total_volume_usd = self
+            .total_volume_usd
+            .checked_add(notional)
+            .ok_or(SettlementError::Overflow("total_volume_usd"))?;
+
+        // Add base rebate (explicit rounding, checked arithmetic)
+        let base_rebate = amount_from_bps(notional, result.base_rebate_bps())?;
+        self.total_base_rebates_usd = self
+            .total_base_rebates_usd
+            .checked_add(base_rebate)
+            .ok_or(SettlementError::Overflow("total_base_rebates_usd"))?;
+
+        // Add spread bonus separately (explicit rounding, checked arithmetic)
+        let bonus_amount = amount_from_bps(notional, result.spread_bonus_bps())?;
+        self.total_bonuses_usd = self
+            .total_bonuses_usd
+            .checked_add(bonus_amount)
+            .ok_or(SettlementError::Overflow("total_bonuses_usd"))?;
+
         // Store event and increment version
+        self.applied_trade_ids.insert(trade_id);
         self.events.push(event);
-        self.version = self.version.saturating_add(1);
+        self.version = self
+            .version
+            .checked_add(1)
+            .ok_or(SettlementError::Overflow("version"))?;
+
+        Ok(())
     }
 
     /// Finalizes the settlement, calculating net payout and transitioning status.
@@ -456,7 +507,8 @@ impl IncentiveSettlement {
         // Calculate net payout (sum of base rebates and bonuses)
         self.net_payout_usd = self
             .total_base_rebates_usd
-            .saturating_add(self.total_bonuses_usd);
+            .checked_add(self.total_bonuses_usd)
+            .ok_or(SettlementError::Overflow("net_payout_usd"))?;
 
         // Transition to finalized status
         self.status = SettlementStatus::Finalized;
@@ -490,13 +542,38 @@ pub enum SettlementError {
     #[error("settlement is already finalized")]
     AlreadyFinalized,
 
+    /// Settlement is not open for new events.
+    #[error("settlement is not open for new events, current status is {status}")]
+    SettlementClosed {
+        /// Current settlement status.
+        status: SettlementStatus,
+    },
+
     /// Settlement is not finalized.
     #[error("settlement is not finalized")]
     NotFinalized,
 
     /// Settlement not found.
-    #[error("settlement not found for MM {0} and period")]
-    NotFound(String),
+    #[error("settlement not found for MM {mm_id} and period {period}")]
+    NotFound {
+        /// Market maker identifier.
+        mm_id: String,
+        /// Settlement period.
+        period: SettlementPeriod,
+    },
+
+    /// The market maker on the event does not match the settlement.
+    #[error("event market maker {actual} does not match settlement market maker {expected}")]
+    MismatchedMarketMaker {
+        /// Expected MM identifier.
+        expected: String,
+        /// Actual MM identifier.
+        actual: String,
+    },
+
+    /// Monetary accumulation overflowed.
+    #[error("monetary overflow while updating {0}")]
+    Overflow(&'static str),
 
     /// Invalid settlement period.
     #[error("invalid settlement period: {0}")]
@@ -505,4 +582,125 @@ pub enum SettlementError {
     /// Repository error.
     #[error("repository error: {0}")]
     Repository(String),
+}
+
+fn amount_from_bps(notional: Decimal, bps: Decimal) -> Result<Decimal, SettlementError> {
+    let bps_divisor = Decimal::from(10_000);
+    notional
+        .checked_mul(bps)
+        .and_then(|product| product.checked_div(bps_divisor))
+        .map(|value| value.round_dp_with_strategy(8, RoundingStrategy::MidpointAwayFromZero))
+        .ok_or(SettlementError::Overflow("amount_from_bps"))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use crate::domain::entities::mm_incentive::{
+        IncentiveConfig, IncentiveTier, compute_incentive,
+    };
+
+    fn make_timestamp(
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: u32,
+        minute: u32,
+        second: u32,
+    ) -> Timestamp {
+        Timestamp::from_millis(
+            Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
+                .single()
+                .unwrap()
+                .timestamp_millis(),
+        )
+        .unwrap()
+    }
+
+    fn make_event(
+        trade_id: TradeId,
+        mm_id: CounterpartyId,
+        notional: Decimal,
+        spread_bps: Option<Decimal>,
+        timestamp: Timestamp,
+    ) -> IncentiveEvent {
+        let config = IncentiveConfig::default();
+        let result = compute_incentive(IncentiveTier::Bronze, notional, spread_bps, &config);
+
+        IncentiveEvent::trade_incentive_earned(trade_id, mm_id, result, notional, timestamp)
+    }
+
+    #[test]
+    fn month_period_is_half_open_and_includes_subseconds() {
+        let period = SettlementPeriod::from_month_year(2026, 12).unwrap();
+        let inside = make_timestamp(2026, 12, 31, 23, 59, 59).add_millis(500);
+        let next_month = make_timestamp(2027, 1, 1, 0, 0, 0);
+
+        assert!(period.contains(inside));
+        assert!(!period.contains(next_month));
+        assert_eq!(period.start(), make_timestamp(2026, 12, 1, 0, 0, 0));
+        assert_eq!(period.end(), next_month);
+    }
+
+    #[test]
+    fn apply_event_deduplicates_trade_ids() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let period = SettlementPeriod::from_month_year(2026, 3).unwrap();
+        let mut settlement = IncentiveSettlement::new(mm_id.clone(), period);
+        let trade_id = TradeId::new_v4();
+        let timestamp = make_timestamp(2026, 3, 15, 10, 0, 0);
+        let event = make_event(trade_id, mm_id, Decimal::from(1_000_000), None, timestamp);
+
+        assert!(settlement.apply_event(event.clone()).is_ok());
+        assert!(settlement.apply_event(event).is_ok());
+        assert_eq!(settlement.total_trades(), 1);
+        assert_eq!(settlement.events().len(), 1);
+    }
+
+    #[test]
+    fn apply_event_rejects_closed_settlement() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let period = SettlementPeriod::from_month_year(2026, 3).unwrap();
+        let mut settlement = IncentiveSettlement::new(mm_id.clone(), period);
+        let event = make_event(
+            TradeId::new_v4(),
+            mm_id,
+            Decimal::from(1_000_000),
+            None,
+            make_timestamp(2026, 3, 15, 10, 0, 0),
+        );
+
+        assert!(settlement.finalize().is_ok());
+        let result = settlement.apply_event(event);
+        assert!(matches!(
+            result,
+            Err(SettlementError::SettlementClosed { .. })
+        ));
+    }
+
+    #[test]
+    fn apply_event_calculates_base_and_bonus_separately() {
+        let mm_id = CounterpartyId::new("mm-1");
+        let period = SettlementPeriod::from_month_year(2026, 3).unwrap();
+        let mut settlement = IncentiveSettlement::new(mm_id.clone(), period);
+        let notional = Decimal::from(1_000_000);
+        let timestamp = make_timestamp(2026, 3, 15, 10, 0, 0);
+        let event = make_event(
+            TradeId::new_v4(),
+            mm_id,
+            notional,
+            Some(Decimal::from(3)),
+            timestamp,
+        );
+
+        let result = event.result();
+        let base = amount_from_bps(notional, result.base_rebate_bps()).unwrap();
+        let bonus = amount_from_bps(notional, result.spread_bonus_bps()).unwrap();
+
+        assert!(settlement.apply_event(event).is_ok());
+        assert_eq!(settlement.total_base_rebates_usd(), base);
+        assert_eq!(settlement.total_bonuses_usd(), bonus);
+        assert_eq!(settlement.net_payout_usd(), Decimal::ZERO);
+    }
 }

@@ -84,6 +84,13 @@ impl IncentiveSettlementService {
         mm_id: &CounterpartyId,
         event: IncentiveEvent,
     ) -> Result<(), SettlementError> {
+        if event.mm_id() != mm_id {
+            return Err(SettlementError::MismatchedMarketMaker {
+                expected: mm_id.to_string(),
+                actual: event.mm_id().to_string(),
+            });
+        }
+
         let timestamp = event.timestamp();
 
         // Determine the period from the event timestamp
@@ -92,8 +99,14 @@ impl IncentiveSettlementService {
         // Get or create settlement for this period
         let mut settlement = self.get_or_create_settlement(mm_id, period).await?;
 
+        if settlement.status() != crate::domain::entities::settlement::SettlementStatus::Open {
+            return Err(SettlementError::SettlementClosed {
+                status: settlement.status(),
+            });
+        }
+
         // Apply the event
-        settlement.apply_event(event);
+        settlement.apply_event(event)?;
 
         // Persist the updated settlement
         self.repository.save(&settlement).await?;
@@ -127,7 +140,10 @@ impl IncentiveSettlementService {
             .repository
             .find_by_mm_and_period(mm_id, &period)
             .await?
-            .ok_or_else(|| SettlementError::NotFound(mm_id.to_string()))?;
+            .ok_or_else(|| SettlementError::NotFound {
+                mm_id: mm_id.to_string(),
+                period,
+            })?;
 
         // Finalize it
         settlement.finalize()?;
@@ -173,22 +189,24 @@ impl IncentiveSettlementService {
             // Finalize the settlement
             if let Err(e) = settlement.finalize() {
                 // Log error but continue with other settlements
-                eprintln!(
-                    "Failed to finalize settlement {} for MM {}: {}",
-                    settlement.id(),
-                    settlement.mm_id(),
-                    e
+                tracing::error!(
+                    error = %e,
+                    settlement_id = %settlement.id(),
+                    mm_id = %settlement.mm_id(),
+                    period = %period,
+                    "Failed to finalize settlement"
                 );
                 continue;
             }
 
             // Persist the finalized settlement
             if let Err(e) = self.repository.save(&settlement).await {
-                eprintln!(
-                    "Failed to save finalized settlement {} for MM {}: {}",
-                    settlement.id(),
-                    settlement.mm_id(),
-                    e
+                tracing::error!(
+                    error = %e,
+                    settlement_id = %settlement.id(),
+                    mm_id = %settlement.mm_id(),
+                    period = %period,
+                    "Failed to save finalized settlement"
                 );
                 continue;
             }
@@ -411,6 +429,92 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn record_incentive_rejects_mismatched_mm_id() {
+        let repo = Arc::new(MockSettlementRepository::new());
+        let service = IncentiveSettlementService::new(repo);
+
+        let mm_id = CounterpartyId::new("mm-1");
+        let other_mm_id = CounterpartyId::new("mm-2");
+        let timestamp = Timestamp::from_millis(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 3, 15, 10, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp_millis(),
+        )
+        .unwrap();
+        let trade_id = TradeId::new_v4();
+        let config = IncentiveConfig::default();
+        let result = crate::domain::entities::mm_incentive::compute_incentive(
+            IncentiveTier::Bronze,
+            Decimal::from(1_000_000),
+            None,
+            &config,
+        );
+
+        let event = IncentiveEvent::trade_incentive_earned(
+            trade_id,
+            other_mm_id,
+            result,
+            Decimal::from(1_000_000),
+            timestamp,
+        );
+
+        let outcome = service.record_incentive(&mm_id, event).await;
+        assert!(matches!(
+            outcome,
+            Err(SettlementError::MismatchedMarketMaker { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn record_incentive_rejects_closed_settlement() {
+        let repo: Arc<dyn SettlementRepository> = Arc::new(MockSettlementRepository::new());
+        let service = IncentiveSettlementService::new(Arc::clone(&repo));
+
+        let mm_id = CounterpartyId::new("mm-1");
+        let period = SettlementPeriod::from_month_year(2026, 3).unwrap();
+
+        let settlement = service
+            .get_or_create_settlement(&mm_id, period)
+            .await
+            .unwrap();
+        let mut finalized = settlement.clone();
+        finalized.finalize().unwrap();
+        repo.save(&finalized).await.unwrap();
+
+        let timestamp = Timestamp::from_millis(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 3, 15, 10, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp_millis(),
+        )
+        .unwrap();
+        let trade_id = TradeId::new_v4();
+        let config = IncentiveConfig::default();
+        let result = crate::domain::entities::mm_incentive::compute_incentive(
+            IncentiveTier::Bronze,
+            Decimal::from(1_000_000),
+            None,
+            &config,
+        );
+        let event = IncentiveEvent::trade_incentive_earned(
+            trade_id,
+            mm_id.clone(),
+            result,
+            Decimal::from(1_000_000),
+            timestamp,
+        );
+
+        let outcome = service.record_incentive(&mm_id, event).await;
+        assert!(matches!(
+            outcome,
+            Err(SettlementError::SettlementClosed { .. })
+        ));
+    }
+
+    #[tokio::test]
     async fn finalize_all_for_period_processes_multiple_settlements() {
         let repo = Arc::new(MockSettlementRepository::new());
         let service = IncentiveSettlementService::new(repo);
@@ -439,5 +543,49 @@ mod tests {
                 .iter()
                 .all(|s| s.status() == SettlementStatus::Finalized)
         );
+    }
+
+    #[tokio::test]
+    async fn period_from_timestamp_keeps_december_in_december() {
+        let repo = Arc::new(MockSettlementRepository::new());
+        let service = IncentiveSettlementService::new(repo);
+
+        let mm_id = CounterpartyId::new("mm-1");
+        let timestamp = Timestamp::from_millis(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 12, 31, 23, 59, 59)
+                .single()
+                .unwrap()
+                .timestamp_millis(),
+        )
+        .unwrap()
+        .add_millis(500);
+
+        let period = IncentiveSettlementService::period_from_timestamp(timestamp).unwrap();
+
+        let december = SettlementPeriod::from_month_year(2026, 12).unwrap();
+        let january = SettlementPeriod::from_month_year(2027, 1).unwrap();
+
+        assert_eq!(period, december);
+        assert!(december.contains(timestamp));
+        assert!(!january.contains(timestamp));
+
+        let trade_id = TradeId::new_v4();
+        let config = IncentiveConfig::default();
+        let result = crate::domain::entities::mm_incentive::compute_incentive(
+            IncentiveTier::Bronze,
+            Decimal::from(1_000_000),
+            None,
+            &config,
+        );
+        let event = IncentiveEvent::trade_incentive_earned(
+            trade_id,
+            mm_id.clone(),
+            result,
+            Decimal::from(1_000_000),
+            timestamp,
+        );
+
+        assert!(service.record_incentive(&mm_id, event).await.is_ok());
     }
 }
