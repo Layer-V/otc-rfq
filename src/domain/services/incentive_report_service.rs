@@ -5,7 +5,9 @@
 //! Orchestrates report generation from settlement data, performance metrics,
 //! and penalty calculations.
 
-use crate::domain::entities::mm_incentive::{IncentiveTier, PenaltyResult, evaluate_penalties};
+use crate::domain::entities::mm_incentive::{
+    IncentiveConfig, IncentiveTier, PenaltyResult, evaluate_penalties,
+};
 use crate::domain::entities::settlement::{
     IncentiveEvent, IncentiveReport, IncentiveSettlement, IncentiveSummary, ReportDetailLevel,
     SettlementError, SettlementPeriod, TradeIncentiveDetail,
@@ -23,6 +25,8 @@ pub struct IncentiveReportService {
     settlement_repository: Arc<dyn SettlementRepository>,
     /// Tracker for performance metrics.
     performance_tracker: Arc<MmPerformanceTracker>,
+    /// Incentive configuration for penalty calculation.
+    incentive_config: Arc<IncentiveConfig>,
 }
 
 impl IncentiveReportService {
@@ -32,14 +36,17 @@ impl IncentiveReportService {
     ///
     /// * `settlement_repository` - Settlement repository implementation
     /// * `performance_tracker` - Performance tracker for metrics
+    /// * `incentive_config` - Incentive configuration for penalty calculation
     #[must_use]
     pub fn new(
         settlement_repository: Arc<dyn SettlementRepository>,
         performance_tracker: Arc<MmPerformanceTracker>,
+        incentive_config: Arc<IncentiveConfig>,
     ) -> Self {
         Self {
             settlement_repository,
             performance_tracker,
+            incentive_config,
         }
     }
 
@@ -91,7 +98,8 @@ impl IncentiveReportService {
     ///
     /// # Errors
     ///
-    /// Returns `SettlementError::MetricsUnavailable` if performance metrics cannot be retrieved.
+    /// Returns `SettlementError::NotFound` if no settlement exists for the period.
+    /// Returns `SettlementError::Repository` if data cannot be retrieved.
     pub async fn generate_report_from_settlement(
         &self,
         settlement: &IncentiveSettlement,
@@ -108,7 +116,9 @@ impl IncentiveReportService {
             settlement.net_payout_usd(),
         );
 
-        // Get current tier from the last event (if any)
+        // Get current tier from the last event in the settlement (if any)
+        // Note: This is the tier at the time of the last trade event, not necessarily
+        // the MM's current tier if tier changes occurred outside this settlement.
         let current_tier = settlement
             .events()
             .last()
@@ -140,20 +150,21 @@ impl IncentiveReportService {
     /// Calculates penalties from performance metrics for the settlement period.
     ///
     /// Returns `None` if metrics are unavailable.
+    ///
+    /// # Note
+    ///
+    /// Currently uses rolling window metrics from `MmPerformanceTracker::get_metrics()`
+    /// which may not align exactly with the settlement period. Future enhancement
+    /// would add period-specific metrics retrieval.
     async fn calculate_penalties(&self, settlement: &IncentiveSettlement) -> Option<PenaltyResult> {
-        // Get performance metrics for the settlement period
+        // Get performance metrics (currently uses rolling window, not settlement period)
         let metrics = self
             .performance_tracker
             .get_metrics(settlement.mm_id())
             .await
             .ok()?;
 
-        // Get incentive config from the performance service
-        // Note: We need to access the config somehow. For now, we'll use a default.
-        // In a real implementation, this would come from a config service or be passed in.
-        let config = crate::domain::entities::mm_incentive::IncentiveConfig::default();
-
-        Some(evaluate_penalties(&metrics, &config))
+        Some(evaluate_penalties(&metrics, &self.incentive_config))
     }
 
     /// Extracts trade details from settlement events.
@@ -266,7 +277,8 @@ mod tests {
             Arc::new(crate::infrastructure::persistence::in_memory::mm_performance_repository::InMemoryMmPerformanceRepository::new()),
             7,
         ));
-        let service = IncentiveReportService::new(repo, perf_tracker);
+        let config = Arc::new(IncentiveConfig::default());
+        let service = IncentiveReportService::new(repo, perf_tracker, config);
 
         let mm_id = CounterpartyId::new("mm-1");
         let period = SettlementPeriod::from_month_year(2026, 3).unwrap();
@@ -314,7 +326,8 @@ mod tests {
             Arc::new(crate::infrastructure::persistence::in_memory::mm_performance_repository::InMemoryMmPerformanceRepository::new()),
             7,
         ));
-        let service = IncentiveReportService::new(repo, perf_tracker);
+        let config = Arc::new(IncentiveConfig::default());
+        let service = IncentiveReportService::new(repo, perf_tracker, config);
 
         let mm_id = CounterpartyId::new("mm-1");
         let period = SettlementPeriod::from_month_year(2026, 3).unwrap();

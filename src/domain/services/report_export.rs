@@ -4,7 +4,7 @@
 
 use crate::domain::entities::settlement::IncentiveReport;
 use printpdf::*;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::io::BufWriter;
 
 /// Errors that can occur during report export.
@@ -68,6 +68,20 @@ impl Default for IncentiveReportExporter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Formats a Decimal value for PDF display without precision loss.
+///
+/// # Arguments
+///
+/// * `value` - The decimal value to format
+/// * `decimals` - Number of decimal places to display
+///
+/// # Returns
+///
+/// Formatted string representation of the decimal.
+fn format_decimal(value: Decimal, decimals: u32) -> String {
+    value.round_dp(decimals).to_string()
 }
 
 impl ReportExporter for IncentiveReportExporter {
@@ -155,8 +169,8 @@ impl ReportExporter for IncentiveReportExporter {
 
         current_layer.use_text(
             format!(
-                "Total Volume: ${:.2}",
-                summary.total_volume_usd().to_f64().unwrap_or(0.0)
+                "Total Volume: ${}",
+                format_decimal(summary.total_volume_usd(), 2)
             ),
             11.0,
             Mm(left_margin),
@@ -167,8 +181,8 @@ impl ReportExporter for IncentiveReportExporter {
 
         current_layer.use_text(
             format!(
-                "Base Rebates: ${:.2}",
-                summary.total_base_rebates_usd().to_f64().unwrap_or(0.0)
+                "Base Rebates: ${}",
+                format_decimal(summary.total_base_rebates_usd(), 2)
             ),
             11.0,
             Mm(left_margin),
@@ -179,8 +193,8 @@ impl ReportExporter for IncentiveReportExporter {
 
         current_layer.use_text(
             format!(
-                "Spread Bonuses: ${:.2}",
-                summary.total_bonuses_usd().to_f64().unwrap_or(0.0)
+                "Spread Bonuses: ${}",
+                format_decimal(summary.total_bonuses_usd(), 2)
             ),
             11.0,
             Mm(left_margin),
@@ -191,8 +205,8 @@ impl ReportExporter for IncentiveReportExporter {
 
         current_layer.use_text(
             format!(
-                "Net Payout: ${:.2}",
-                summary.net_payout_usd().to_f64().unwrap_or(0.0)
+                "Net Payout: ${}",
+                format_decimal(summary.net_payout_usd(), 2)
             ),
             11.0,
             Mm(left_margin),
@@ -228,8 +242,8 @@ impl ReportExporter for IncentiveReportExporter {
             if penalties.should_reduce_capacity() {
                 current_layer.use_text(
                     format!(
-                        "Capacity Reduction: {:.1}%",
-                        penalties.capacity_reduction_pct().to_f64().unwrap_or(0.0) * 100.0
+                        "Capacity Reduction: {}%",
+                        format_decimal(penalties.capacity_reduction_pct() * Decimal::from(100), 1)
                     ),
                     11.0,
                     Mm(left_margin),
@@ -266,17 +280,24 @@ impl ReportExporter for IncentiveReportExporter {
 
             for (idx, detail) in details.iter().enumerate() {
                 if y_position < 30.0 {
+                    current_layer.use_text(
+                        "(Additional trades truncated due to space limitations)",
+                        9.0,
+                        Mm(left_margin),
+                        Mm(y_position),
+                        &font,
+                    );
                     break;
                 }
 
                 current_layer.use_text(
                     format!(
-                        "{}. Trade {} - ${:.2} - Tier: {} - Rebate: ${:.2}",
+                        "{}. Trade {} - ${} - Tier: {} - Rebate: ${}",
                         idx + 1,
                         detail.trade_id(),
-                        detail.notional().to_f64().unwrap_or(0.0),
+                        format_decimal(detail.notional(), 2),
                         detail.tier(),
-                        detail.rebate_amount().to_f64().unwrap_or(0.0)
+                        format_decimal(detail.rebate_amount(), 2)
                     ),
                     10.0,
                     Mm(left_margin),
