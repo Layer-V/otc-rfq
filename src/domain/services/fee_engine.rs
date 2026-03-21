@@ -57,7 +57,7 @@ pub const DEFAULT_RFQ_MAKER_BPS: i32 = -1;
 /// Default Block trade rate in basis points (0.02% for both sides).
 pub const DEFAULT_BLOCK_BPS: i32 = 2;
 
-/// Basis points divisor for converting to decimal.
+/// Basis points divisor for converting to decimal (1 bp = 0.0001 or 0.01%).
 const BPS_DIVISOR: Decimal = Decimal::from_parts(10000, 0, 0, false, 0);
 
 /// Fee rates for a trade type.
@@ -319,7 +319,7 @@ impl Default for FeeSchedule {
 ///     Decimal::new(300, 2),  // $3.00 taker fee
 ///     Decimal::new(-100, 2), // -$1.00 maker rebate
 ///     Some(10),              // 10% discount applied
-/// );
+/// ).unwrap();
 ///
 /// assert_eq!(breakdown.net_fee(), Decimal::new(200, 2)); // $2.00 net
 /// ```
@@ -343,19 +343,28 @@ impl FeeBreakdown {
     /// * `taker_fee` - Taker fee amount
     /// * `maker_fee` - Maker fee amount
     /// * `volume_discount_applied` - Discount percentage applied, if any
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns `DomainError::FeeCalculationFailed` if net fee calculation overflows.
     pub fn new(
         taker_fee: Decimal,
         maker_fee: Decimal,
         volume_discount_applied: Option<u8>,
-    ) -> Self {
-        let net_fee = taker_fee.saturating_add(maker_fee);
-        Self {
+    ) -> DomainResult<Self> {
+        let net_fee =
+            taker_fee
+                .checked_add(maker_fee)
+                .ok_or_else(|| DomainError::FeeCalculationFailed {
+                    reason: "net fee calculation overflow".to_string(),
+                })?;
+
+        Ok(Self {
             taker_fee,
             maker_fee,
             net_fee,
             volume_discount_applied,
-        }
+        })
     }
 
     /// Creates a zero fee breakdown.
@@ -598,7 +607,7 @@ impl FeeEngine {
         // Calculate fees
         let (taker_fee, maker_fee) = self.compute_fees(notional_usd, &base_rates, discount)?;
 
-        Ok(FeeBreakdown::new(taker_fee, maker_fee, discount_pct))
+        FeeBreakdown::new(taker_fee, maker_fee, discount_pct)
     }
 
     /// Computes taker and maker fees with optional discount.
@@ -862,7 +871,8 @@ mod tests {
 
         #[test]
         fn new_calculates_net_fee() {
-            let breakdown = FeeBreakdown::new(Decimal::new(300, 0), Decimal::new(-100, 0), None);
+            let breakdown =
+                FeeBreakdown::new(Decimal::new(300, 0), Decimal::new(-100, 0), None).unwrap();
             assert_eq!(breakdown.net_fee(), Decimal::new(200, 0));
         }
 
@@ -877,7 +887,8 @@ mod tests {
 
         #[test]
         fn with_discount() {
-            let breakdown = FeeBreakdown::new(Decimal::new(270, 0), Decimal::new(-90, 0), Some(10));
+            let breakdown =
+                FeeBreakdown::new(Decimal::new(270, 0), Decimal::new(-90, 0), Some(10)).unwrap();
             assert_eq!(breakdown.volume_discount_applied(), Some(10));
         }
     }

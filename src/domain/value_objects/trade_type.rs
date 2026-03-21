@@ -23,9 +23,10 @@ use std::fmt;
 /// assert_eq!(trade_type.to_string(), "RFQ");
 ///
 /// let block = TradeType::Block;
-/// assert_eq!(block.to_string(), "Block");
+/// assert_eq!(block.to_string(), "BLOCK");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TradeType {
     /// Request for Quote trade.
     ///
@@ -62,7 +63,7 @@ impl fmt::Display for TradeType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rfq => write!(f, "RFQ"),
-            Self::Block => write!(f, "Block"),
+            Self::Block => write!(f, "BLOCK"),
         }
     }
 }
@@ -74,7 +75,7 @@ mod tests {
     #[test]
     fn trade_type_display() {
         assert_eq!(TradeType::Rfq.to_string(), "RFQ");
-        assert_eq!(TradeType::Block.to_string(), "Block");
+        assert_eq!(TradeType::Block.to_string(), "BLOCK");
     }
 
     #[test]
@@ -98,19 +99,19 @@ mod tests {
     fn trade_type_serialization() {
         let rfq = TradeType::Rfq;
         let json = serde_json::to_string(&rfq).unwrap();
-        assert_eq!(json, "\"Rfq\"");
+        assert_eq!(json, "\"RFQ\"");
 
         let block = TradeType::Block;
         let json = serde_json::to_string(&block).unwrap();
-        assert_eq!(json, "\"Block\"");
+        assert_eq!(json, "\"BLOCK\"");
     }
 
     #[test]
     fn trade_type_deserialization() {
-        let rfq: TradeType = serde_json::from_str("\"Rfq\"").unwrap();
+        let rfq: TradeType = serde_json::from_str("\"RFQ\"").unwrap();
         assert_eq!(rfq, TradeType::Rfq);
 
-        let block: TradeType = serde_json::from_str("\"Block\"").unwrap();
+        let block: TradeType = serde_json::from_str("\"BLOCK\"").unwrap();
         assert_eq!(block, TradeType::Block);
     }
 }
