@@ -66,8 +66,6 @@ impl fmt::Display for TradeType {
         }
     }
 }
-
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
