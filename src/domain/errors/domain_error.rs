@@ -212,6 +212,13 @@ pub enum DomainError {
         /// Description of what underflowed.
         field: String,
     },
+
+    // Fee calculation errors
+    /// Fee calculation failed.
+    FeeCalculationFailed {
+        /// Reason for failure.
+        reason: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -367,6 +374,9 @@ impl fmt::Display for DomainError {
             }
             Self::CapacityUnderflow { field } => {
                 write!(f, "capacity counter underflow: {}", field)
+            }
+            Self::FeeCalculationFailed { reason } => {
+                write!(f, "fee calculation failed: {}", reason)
             }
         }
     }

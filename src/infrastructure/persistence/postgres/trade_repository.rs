@@ -278,6 +278,9 @@ struct TradeRow {
     version: i64,
     created_at: i64,
     updated_at: i64,
+    taker_fee: Option<rust_decimal::Decimal>,
+    maker_fee: Option<rust_decimal::Decimal>,
+    net_fee: Option<rust_decimal::Decimal>,
 }
 
 impl TradeRow {
@@ -325,6 +328,9 @@ impl TradeRow {
             self.version as u64,
             created_at,
             updated_at,
+            self.taker_fee,
+            self.maker_fee,
+            self.net_fee,
         ))
     }
 }

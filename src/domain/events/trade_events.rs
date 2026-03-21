@@ -37,6 +37,12 @@ pub struct TradeExecuted {
     pub quantity: Quantity,
     /// The settlement method.
     pub settlement_method: SettlementMethod,
+    /// Taker fee (positive = fee, negative = rebate).
+    pub taker_fee: Option<rust_decimal::Decimal>,
+    /// Maker fee (positive = fee, negative = rebate).
+    pub maker_fee: Option<rust_decimal::Decimal>,
+    /// Net fee (taker + maker).
+    pub net_fee: Option<rust_decimal::Decimal>,
 }
 
 impl TradeExecuted {
@@ -62,6 +68,40 @@ impl TradeExecuted {
             price,
             quantity,
             settlement_method,
+            taker_fee: None,
+            maker_fee: None,
+            net_fee: None,
+        }
+    }
+
+    /// Creates a new TradeExecuted event with fees.
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_fees(
+        rfq_id: RfqId,
+        trade_id: TradeId,
+        quote_id: QuoteId,
+        venue_id: VenueId,
+        counterparty_id: CounterpartyId,
+        price: Price,
+        quantity: Quantity,
+        settlement_method: SettlementMethod,
+        taker_fee: rust_decimal::Decimal,
+        maker_fee: rust_decimal::Decimal,
+        net_fee: rust_decimal::Decimal,
+    ) -> Self {
+        Self {
+            metadata: EventMetadata::for_rfq(rfq_id),
+            trade_id,
+            quote_id,
+            venue_id,
+            counterparty_id,
+            price,
+            quantity,
+            settlement_method,
+            taker_fee: Some(taker_fee),
+            maker_fee: Some(maker_fee),
+            net_fee: Some(net_fee),
         }
     }
 }

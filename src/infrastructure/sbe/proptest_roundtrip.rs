@@ -250,6 +250,9 @@ fn create_test_trade_executed(
         price,
         quantity,
         settlement_method: SettlementMethod::OffChain,
+        taker_fee: None,
+        maker_fee: None,
+        net_fee: None,
     })
 }
 

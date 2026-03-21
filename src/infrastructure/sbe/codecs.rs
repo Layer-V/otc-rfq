@@ -634,6 +634,9 @@ impl SbeDecode for TradeExecuted {
             price,
             quantity,
             settlement_method: SettlementMethod::OffChain, // Default, not encoded
+            taker_fee: None,
+            maker_fee: None,
+            net_fee: None,
         })
     }
 }

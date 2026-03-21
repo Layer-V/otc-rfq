@@ -26,6 +26,7 @@ pub mod capacity_manager;
 pub mod collateral_lock;
 pub mod compensating_trade;
 pub mod conflict_resolver;
+pub mod fee_engine;
 pub mod incentive_report_service;
 pub mod incentive_settlement_service;
 pub mod last_look;
@@ -102,4 +103,9 @@ pub use mm_incentive_service::{MmIncentiveError, MmIncentiveResult, MmIncentiveS
 pub use report_export::{ExportError, IncentiveReportExporter, ReportExporter};
 pub use streaming_quote::{
     StreamingQuoteRejectReason, StreamingQuoteResult, StreamingQuoteService,
+};
+
+pub use fee_engine::{
+    FeeBreakdown, FeeEngine, FeeOverrideProvider, FeeRates, FeeSchedule, NoOpOverrideProvider,
+    NoOpVolumeProvider, VolumeDiscount, VolumeProvider,
 };
