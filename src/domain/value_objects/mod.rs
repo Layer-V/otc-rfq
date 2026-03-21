@@ -59,6 +59,7 @@ pub mod spread_metrics;
 pub mod strategy;
 pub mod symbol;
 pub mod timestamp;
+pub mod trade_type;
 
 #[cfg(test)]
 mod tests;
@@ -83,3 +84,4 @@ pub use spread_metrics::{EffectiveSpread, RealizedSpread, SpreadMetrics};
 pub use strategy::{Strategy, StrategyBuilder, StrategyLeg, StrategyType};
 pub use symbol::{Symbol, SymbolError};
 pub use timestamp::Timestamp;
+pub use trade_type::TradeType;
