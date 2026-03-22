@@ -96,7 +96,7 @@ impl TradeExecuted {
 /// use otc_rfq::domain::events::trade_events::TradeExecuted;
 /// use otc_rfq::domain::value_objects::*;
 ///
-/// // Notice this won't compile unless required fields are provided.
+/// // All required fields must be set before calling `.build()`,
 /// let event = TradeExecuted::builder()
 ///     .rfq_id(RfqId::new_v4())
 ///     .trade_id(TradeId::new_v4())
