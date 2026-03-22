@@ -135,8 +135,8 @@ mod tests {
 
     fn create_test_confirmation() -> TradeConfirmation {
         TradeConfirmation::new(
-            TradeId::generate(),
-            RfqId::generate(),
+            TradeId::new_v4(),
+            RfqId::new_v4(),
             Price::new(50000.0).unwrap(),
             Quantity::new(1.0).unwrap(),
             Decimal::new(10, 0),

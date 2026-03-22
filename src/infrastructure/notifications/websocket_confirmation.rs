@@ -83,11 +83,9 @@ impl InMemorySessionRegistry {
 
 impl SessionRegistry for InMemorySessionRegistry {
     fn get_sessions(&self, counterparty_id: &CounterpartyId) -> Vec<SessionHandle> {
-        // Note: This is a blocking call in an async context
-        // In production, you'd want to use tokio::task::block_in_place or similar
-        let sessions = self.sessions.blocking_read();
-        sessions.get(counterparty_id).cloned()
-            .unwrap_or_default()
+        // Use try_read to avoid blocking in async context
+        let sessions = self.sessions.try_read().expect("Failed to acquire read lock");
+        sessions.get(counterparty_id).cloned().unwrap_or_default()
     }
 }
 
@@ -183,7 +181,7 @@ impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::clone_on_ref_ptr)]
 mod tests {
     use super::*;
     use crate::domain::value_objects::{
@@ -233,9 +231,11 @@ mod tests {
     }
 
     fn create_test_confirmation() -> TradeConfirmation {
+        let trade_id = TradeId::new_v4();
+        let rfq_id = RfqId::new_v4();
         TradeConfirmation::new(
-            TradeId::generate(),
-            RfqId::generate(),
+            trade_id,
+            rfq_id,
             Price::new(50000.0).unwrap(),
             Quantity::new(1.0).unwrap(),
             Decimal::new(10, 0),
@@ -281,10 +281,16 @@ mod tests {
         let seller_session = Arc::new(MockSession::new(true, false));
 
         registry
-            .register_session(CounterpartyId::new("buyer-1"), buyer_session.clone())
+            .register_session(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&buyer_session) as Arc<dyn WebSocketSession>,
+            )
             .await;
         registry
-            .register_session(CounterpartyId::new("seller-1"), seller_session.clone())
+            .register_session(
+                CounterpartyId::new("seller-1"),
+                Arc::clone(&seller_session) as Arc<dyn WebSocketSession>,
+            )
             .await;
 
         let adapter = WebSocketConfirmationAdapter::new(registry);
@@ -320,10 +326,16 @@ mod tests {
         let bad_session = Arc::new(MockSession::new(true, true));
 
         registry
-            .register_session(CounterpartyId::new("buyer-1"), good_session.clone())
+            .register_session(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&good_session) as Arc<dyn WebSocketSession>,
+            )
             .await;
         registry
-            .register_session(CounterpartyId::new("seller-1"), bad_session.clone())
+            .register_session(
+                CounterpartyId::new("seller-1"),
+                Arc::clone(&bad_session) as Arc<dyn WebSocketSession>,
+            )
             .await;
 
         let adapter = WebSocketConfirmationAdapter::new(registry);
@@ -342,10 +354,16 @@ mod tests {
         let disconnected = Arc::new(MockSession::new(false, false));
 
         registry
-            .register_session(CounterpartyId::new("buyer-1"), connected.clone())
+            .register_session(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&connected) as Arc<dyn WebSocketSession>,
+            )
             .await;
         registry
-            .register_session(CounterpartyId::new("buyer-1"), disconnected.clone())
+            .register_session(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&disconnected) as Arc<dyn WebSocketSession>,
+            )
             .await;
 
         registry.cleanup_disconnected().await;

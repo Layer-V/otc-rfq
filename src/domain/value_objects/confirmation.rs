@@ -336,8 +336,8 @@ mod tests {
     fn trade_confirmation_new() {
         use crate::domain::value_objects::Blockchain;
 
-        let trade_id = TradeId::generate();
-        let rfq_id = RfqId::generate();
+        let trade_id = TradeId::new_v4();
+        let rfq_id = RfqId::new_v4();
         let buyer_id = CounterpartyId::new("buyer-1");
         let seller_id = CounterpartyId::new("seller-1");
 

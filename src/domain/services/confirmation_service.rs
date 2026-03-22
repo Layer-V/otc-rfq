@@ -301,7 +301,7 @@ impl MultiChannelConfirmationService {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::clone_on_ref_ptr)]
 mod tests {
     use super::*;
     use crate::domain::value_objects::{
@@ -353,8 +353,8 @@ mod tests {
 
     fn create_test_confirmation() -> TradeConfirmation {
         TradeConfirmation::new(
-            TradeId::generate(),
-            RfqId::generate(),
+            TradeId::new_v4(),
+            RfqId::new_v4(),
             Price::new(50000.0).unwrap(),
             Quantity::new(1.0).unwrap(),
             Decimal::new(10, 0),
@@ -402,7 +402,7 @@ mod tests {
     async fn send_confirmation_single_channel_success() {
         let adapter = Arc::new(MockAdapter::new(ConfirmationChannel::Email, false));
         let service = MultiChannelConfirmationService::new(
-            vec![adapter.clone()],
+            vec![Arc::clone(&adapter) as Arc<dyn ConfirmationChannelAdapter>],
             ConfirmationConfig::for_testing(),
         );
 
@@ -419,7 +419,7 @@ mod tests {
     async fn send_confirmation_single_channel_failure() {
         let adapter = Arc::new(MockAdapter::new(ConfirmationChannel::Email, true));
         let service = MultiChannelConfirmationService::new(
-            vec![adapter.clone()],
+            vec![Arc::clone(&adapter) as Arc<dyn ConfirmationChannelAdapter>],
             ConfirmationConfig::for_testing(),
         );
 
@@ -438,7 +438,10 @@ mod tests {
         let ws_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::WebSocket, false));
 
         let service = MultiChannelConfirmationService::new(
-            vec![email_adapter.clone(), ws_adapter.clone()],
+            vec![
+                Arc::clone(&email_adapter) as Arc<dyn ConfirmationChannelAdapter>,
+                Arc::clone(&ws_adapter) as Arc<dyn ConfirmationChannelAdapter>,
+            ],
             ConfirmationConfig::for_testing(),
         );
 
@@ -463,7 +466,10 @@ mod tests {
         let ws_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::WebSocket, true));
 
         let service = MultiChannelConfirmationService::new(
-            vec![email_adapter.clone(), ws_adapter.clone()],
+            vec![
+                Arc::clone(&email_adapter) as Arc<dyn ConfirmationChannelAdapter>,
+                Arc::clone(&ws_adapter) as Arc<dyn ConfirmationChannelAdapter>,
+            ],
             ConfirmationConfig::for_testing(),
         );
 
@@ -492,7 +498,10 @@ mod tests {
             Duration::from_secs(1),
         );
 
-        let service = MultiChannelConfirmationService::new(vec![adapter.clone()], config);
+        let service = MultiChannelConfirmationService::new(
+            vec![Arc::clone(&adapter) as Arc<dyn ConfirmationChannelAdapter>],
+            config,
+        );
         let confirmation = create_test_confirmation();
         let preferences =
             NotificationPreferences::email_only("test@example.com".to_string()).unwrap();

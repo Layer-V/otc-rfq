@@ -82,11 +82,9 @@ impl InMemoryGrpcClientRegistry {
 
 impl GrpcClientRegistry for InMemoryGrpcClientRegistry {
     fn get_streams(&self, counterparty_id: &CounterpartyId) -> Vec<StreamHandle> {
-        // Note: This is a blocking call in an async context
-        // In production, you'd want to use tokio::task::block_in_place or similar
-        let streams = self.streams.blocking_read();
-        streams.get(counterparty_id).cloned()
-            .unwrap_or_default()
+        // Use try_read to avoid blocking in async context
+        let streams = self.streams.try_read().expect("Failed to acquire read lock");
+        streams.get(counterparty_id).cloned().unwrap_or_default()
     }
 }
 
@@ -175,7 +173,7 @@ impl ConfirmationChannelAdapter for GrpcConfirmationAdapter {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::clone_on_ref_ptr)]
 mod tests {
     use super::*;
     use crate::domain::value_objects::{
@@ -225,9 +223,11 @@ mod tests {
     }
 
     fn create_test_confirmation() -> TradeConfirmation {
+        let trade_id = TradeId::new_v4();
+        let rfq_id = RfqId::new_v4();
         TradeConfirmation::new(
-            TradeId::generate(),
-            RfqId::generate(),
+            trade_id,
+            rfq_id,
             Price::new(50000.0).unwrap(),
             Quantity::new(1.0).unwrap(),
             Decimal::new(10, 0),
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_to_buyer_stream() {
+    async fn send_to_single_counterparty() {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let stream = Arc::new(MockStream::new(true, false));
 
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn send_inactive_stream_fails() {
+    async fn send_to_inactive_stream() {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let stream = Arc::new(MockStream::new(false, false));
 
@@ -312,10 +312,16 @@ mod tests {
         let bad_stream = Arc::new(MockStream::new(true, true));
 
         registry
-            .register_stream(CounterpartyId::new("buyer-1"), good_stream.clone())
+            .register_stream(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&good_stream) as Arc<dyn GrpcStream>,
+            )
             .await;
         registry
-            .register_stream(CounterpartyId::new("seller-1"), bad_stream.clone())
+            .register_stream(
+                CounterpartyId::new("seller-1"),
+                Arc::clone(&bad_stream) as Arc<dyn GrpcStream>,
+            )
             .await;
 
         let adapter = GrpcConfirmationAdapter::new(registry);
@@ -334,10 +340,16 @@ mod tests {
         let inactive = Arc::new(MockStream::new(false, false));
 
         registry
-            .register_stream(CounterpartyId::new("buyer-1"), active.clone())
+            .register_stream(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&active) as Arc<dyn GrpcStream>,
+            )
             .await;
         registry
-            .register_stream(CounterpartyId::new("buyer-1"), inactive.clone())
+            .register_stream(
+                CounterpartyId::new("buyer-1"),
+                Arc::clone(&inactive) as Arc<dyn GrpcStream>,
+            )
             .await;
 
         registry.cleanup_inactive().await;
