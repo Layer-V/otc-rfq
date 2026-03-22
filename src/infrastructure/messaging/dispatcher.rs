@@ -42,24 +42,24 @@ impl DomainEventDispatcher {
     /// Serializes and dispatches an event.
     async fn dispatch<T: Serialize>(&self, subject: String, event: &T) -> Result<(), String> {
         let payload = serde_json::to_string(event).map_err(|e| format!("{e}"))?;
+        let msg = (subject, payload);
 
         // Non-blocking try_send is preferred to avoid stalling the use-case
         // if the background worker falls behind or channel is full.
-        // If it fails because the channel is full, we log it and fallback to async send.
-        if let Err(e) = self.sender.try_send((subject.clone(), payload.clone())) {
+        if let Err(e) = self.sender.try_send(msg) {
             match e {
-                mpsc::error::TrySendError::Full(_) => {
+                mpsc::error::TrySendError::Full(returned_msg) => {
                     tracing::warn!(
-                        "Event dispatcher channel full, blocking to send event: {}",
-                        subject
+                        "Event dispatcher channel full, dropping event: {}",
+                        returned_msg.0
                     );
-                    self.sender
-                        .send((subject, payload))
-                        .await
-                        .map_err(|e| format!("{e}"))?;
+                    return Err("Event dispatcher channel full, dropping event".to_string());
                 }
-                mpsc::error::TrySendError::Closed(_) => {
-                    tracing::error!("Event dispatcher channel closed. Action: {}", subject);
+                mpsc::error::TrySendError::Closed(returned_msg) => {
+                    tracing::error!(
+                        "Event dispatcher channel closed. Action: {}",
+                        returned_msg.0
+                    );
                     return Err("Event dispatcher channel closed".to_string());
                 }
             }
@@ -128,16 +128,9 @@ impl TradeEventPublisher for DomainEventDispatcher {
         });
         let subject = format!("{}.rfq.{}.execution_failed", self.subject_prefix, rfq_id);
 
-        let json_payload = serde_json::to_string(&payload).map_err(|e| {
-            crate::application::error::ApplicationError::EventPublishError(e.to_string())
-        })?;
-
-        self.sender
-            .send((subject, json_payload))
+        self.dispatch(subject, &payload)
             .await
-            .map_err(|e| {
-                crate::application::error::ApplicationError::EventPublishError(e.to_string())
-            })
+            .map_err(crate::application::error::ApplicationError::EventPublishError)
     }
 }
 
