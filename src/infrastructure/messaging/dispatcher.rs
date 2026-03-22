@@ -53,14 +53,12 @@ impl DomainEventDispatcher {
                         "Event dispatcher channel full, dropping event: {}",
                         returned_msg.0
                     );
-                    return Err("Event dispatcher channel full, dropping event".to_string());
                 }
                 mpsc::error::TrySendError::Closed(returned_msg) => {
                     tracing::error!(
                         "Event dispatcher channel closed. Action: {}",
                         returned_msg.0
                     );
-                    return Err("Event dispatcher channel closed".to_string());
                 }
             }
         }
