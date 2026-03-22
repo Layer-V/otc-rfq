@@ -88,33 +88,24 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
             );
             Ok(())
         } else if status.is_server_error() {
-            // 5xx errors should be retried
+            // 5xx errors should be retried by the confirmation service
+            let reason = match status.canonical_reason() {
+                Some(reason) => format!("Server error {}: {}", status.as_u16(), reason),
+                None => format!("Server error {}", status.as_u16()),
+            };
             Err(DomainError::ConfirmationFailed {
                 channel: "API_CALLBACK".to_string(),
-                reason: format!(
-                    "Server error ({}): {}",
-                    status,
-                    status.canonical_reason().unwrap_or("Unknown")
-                ),
+                reason,
             })
         } else {
-            // 4xx errors should not be retried
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unable to read response body".to_string());
-
-            tracing::error!(
-                trade_id = %confirmation.trade_id(),
-                webhook_url = %self.webhook_url,
-                status = %status,
-                body = %body,
-                "API callback confirmation failed with client error"
-            );
-
+            // 4xx errors should not be retried (client errors are permanent)
+            let reason = match status.canonical_reason() {
+                Some(reason) => format!("Client error {}: {}", status.as_u16(), reason),
+                None => format!("Client error {}", status.as_u16()),
+            };
             Err(DomainError::ConfirmationFailed {
                 channel: "API_CALLBACK".to_string(),
-                reason: format!("Client error ({}): {}", status, body),
+                reason,
             })
         }
     }
