@@ -84,8 +84,12 @@ impl InMemorySessionRegistry {
 impl SessionRegistry for InMemorySessionRegistry {
     fn get_sessions(&self, counterparty_id: &CounterpartyId) -> Vec<SessionHandle> {
         // Use try_read to avoid blocking in async context
-        let sessions = self.sessions.try_read().expect("Failed to acquire read lock");
-        sessions.get(counterparty_id).cloned().unwrap_or_default()
+        // If lock is poisoned or unavailable, return empty vec
+        self.sessions
+            .try_read()
+            .ok()
+            .and_then(|sessions| sessions.get(counterparty_id).cloned())
+            .unwrap_or_default()
     }
 }
 

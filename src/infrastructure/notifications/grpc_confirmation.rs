@@ -83,8 +83,12 @@ impl InMemoryGrpcClientRegistry {
 impl GrpcClientRegistry for InMemoryGrpcClientRegistry {
     fn get_streams(&self, counterparty_id: &CounterpartyId) -> Vec<StreamHandle> {
         // Use try_read to avoid blocking in async context
-        let streams = self.streams.try_read().expect("Failed to acquire read lock");
-        streams.get(counterparty_id).cloned().unwrap_or_default()
+        // If lock is poisoned or unavailable, return empty vec
+        self.streams
+            .try_read()
+            .ok()
+            .and_then(|streams| streams.get(counterparty_id).cloned())
+            .unwrap_or_default()
     }
 }
 
