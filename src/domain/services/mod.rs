@@ -25,6 +25,7 @@ pub mod block_trade_service;
 pub mod capacity_manager;
 pub mod collateral_lock;
 pub mod compensating_trade;
+pub mod confirmation_service;
 pub mod conflict_resolver;
 pub mod fee_engine;
 pub mod incentive_report_service;
@@ -108,4 +109,9 @@ pub use streaming_quote::{
 pub use fee_engine::{
     FeeBreakdown, FeeEngine, FeeOverrideProvider, FeeRates, FeeSchedule, NoOpOverrideProvider,
     NoOpVolumeProvider, VolumeDiscount, VolumeProvider,
+};
+
+pub use confirmation_service::{
+    ConfirmationChannelAdapter, ConfirmationConfig, ConfirmationService,
+    MultiChannelConfirmationService,
 };
