@@ -43,11 +43,13 @@
 
 pub mod arithmetic;
 pub mod compliance;
+pub mod confirmation;
 pub mod enums;
 pub mod ids;
 pub mod instrument;
 pub mod liquidity_classification;
 pub mod negotiation_state;
+pub mod notification_preferences;
 pub mod price;
 pub mod price_discovery;
 pub mod price_improvement;
@@ -66,6 +68,9 @@ mod tests;
 
 pub use arithmetic::{ArithmeticError, ArithmeticResult, CheckedArithmetic, Rounding, div_round};
 pub use compliance::{ComplianceCheckResults, ComplianceCheckResultsBuilder, RegulatoryFlag};
+pub use confirmation::{
+    ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, TradeConfirmation,
+};
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
 pub use ids::{
     CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId, VenueId,
@@ -73,6 +78,7 @@ pub use ids::{
 pub use instrument::{Instrument, InstrumentBuilder};
 pub use liquidity_classification::LiquidityClassification;
 pub use negotiation_state::{InvalidNegotiationStateError, NegotiationState};
+pub use notification_preferences::NotificationPreferences;
 pub use price::Price;
 pub use price_discovery::{PriceDiscoveryMethod, TheoreticalPrice};
 pub use price_improvement::{ImprovementSource, PriceImprovement};

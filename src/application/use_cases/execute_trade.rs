@@ -109,6 +109,9 @@ pub struct ExecuteTradeUseCase {
     trade_repository: Arc<dyn TradeRepository>,
     event_publisher: Arc<dyn TradeEventPublisher>,
     venue_registry: Arc<dyn VenueRegistry>,
+    confirmation_service: Option<Arc<dyn crate::domain::services::ConfirmationService>>,
+    counterparty_repository:
+        Option<Arc<dyn crate::infrastructure::persistence::traits::CounterpartyRepository>>,
 }
 
 impl ExecuteTradeUseCase {
@@ -125,7 +128,23 @@ impl ExecuteTradeUseCase {
             trade_repository,
             event_publisher,
             venue_registry,
+            confirmation_service: None,
+            counterparty_repository: None,
         }
+    }
+
+    /// Sets the confirmation service for multi-channel trade confirmations.
+    #[must_use]
+    pub fn with_confirmation_service(
+        mut self,
+        confirmation_service: Arc<dyn crate::domain::services::ConfirmationService>,
+        counterparty_repository: Arc<
+            dyn crate::infrastructure::persistence::traits::CounterpartyRepository,
+        >,
+    ) -> Self {
+        self.confirmation_service = Some(confirmation_service);
+        self.counterparty_repository = Some(counterparty_repository);
+        self
     }
 
     /// Executes a trade for the given request.
@@ -219,7 +238,23 @@ impl ExecuteTradeUseCase {
             trade.quantity(),
             execution_result.settlement_method(),
         );
-        self.event_publisher.publish_trade_executed(event).await?;
+        self.event_publisher
+            .publish_trade_executed(event.clone())
+            .await?;
+
+        // Send multi-channel trade confirmations (non-blocking)
+        if let (Some(confirmation_service), Some(counterparty_repo)) =
+            (&self.confirmation_service, &self.counterparty_repository)
+        {
+            self.send_trade_confirmations(
+                &trade,
+                &event,
+                &rfq,
+                Arc::clone(confirmation_service),
+                Arc::clone(counterparty_repo),
+            )
+            .await;
+        }
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
 
@@ -250,6 +285,87 @@ impl ExecuteTradeUseCase {
                 result.executed_quantity(),
             )
         }
+    }
+
+    /// Sends trade confirmations to counterparty via configured channels.
+    ///
+    /// This is a fire-and-forget operation that doesn't block trade execution.
+    /// Failures in confirmation delivery are logged but don't affect the trade.
+    async fn send_trade_confirmations(
+        &self,
+        trade: &Trade,
+        event: &TradeExecuted,
+        rfq: &Rfq,
+        confirmation_service: Arc<dyn crate::domain::services::ConfirmationService>,
+        counterparty_repo: Arc<
+            dyn crate::infrastructure::persistence::traits::CounterpartyRepository,
+        >,
+    ) {
+        use crate::domain::value_objects::{OrderSide, TradeConfirmation};
+
+        let counterparty_id = rfq.client_id();
+
+        // Load counterparty to get notification preferences
+        let counterparty = match counterparty_repo.get(counterparty_id).await {
+            Ok(Some(cp)) => cp,
+            Ok(None) => {
+                tracing::warn!(
+                    trade_id = %trade.id(),
+                    counterparty_id = %counterparty_id,
+                    "Counterparty not found, skipping confirmation"
+                );
+                return;
+            }
+            Err(e) => {
+                tracing::error!(
+                    trade_id = %trade.id(),
+                    counterparty_id = %counterparty_id,
+                    error = %e,
+                    "Failed to load counterparty for confirmation"
+                );
+                return;
+            }
+        };
+
+        // Determine buyer and seller based on RFQ side
+        // Note: In the current implementation, we use the client as both buyer and seller
+        // because the venue is not modeled as a CounterpartyId. In a production system,
+        // we would need to:
+        // 1. Model venues as counterparties, OR
+        // 2. Track the actual counterparty on the other side of the trade, OR
+        // 3. Extend TradeConfirmation to support VenueId as a separate concept
+        let (buyer_id, seller_id) = match rfq.side() {
+            OrderSide::Buy => (counterparty_id.clone(), counterparty_id.clone()),
+            OrderSide::Sell => (counterparty_id.clone(), counterparty_id.clone()),
+        };
+
+        // Build trade confirmation
+        let confirmation = TradeConfirmation::new(
+            trade.id(),
+            trade.rfq_id(),
+            trade.price(),
+            trade.quantity(),
+            event.taker_fee.unwrap_or_default(),
+            event.maker_fee.unwrap_or_default(),
+            event.net_fee.unwrap_or_default(),
+            event.settlement_method,
+            buyer_id,
+            seller_id,
+        );
+
+        // Send confirmation (async, non-blocking)
+        let preferences = counterparty.notification_preferences().clone();
+        tokio::spawn(async move {
+            let status = confirmation_service
+                .send_confirmation(&confirmation, &preferences)
+                .await;
+
+            tracing::info!(
+                trade_id = %confirmation.trade_id(),
+                status = %status,
+                "Trade confirmation delivery completed"
+            );
+        });
     }
 }
 

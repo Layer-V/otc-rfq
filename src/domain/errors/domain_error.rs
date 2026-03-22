@@ -219,6 +219,20 @@ pub enum DomainError {
         /// Reason for failure.
         reason: String,
     },
+
+    // Notification errors
+    /// Confirmation delivery failed.
+    ConfirmationFailed {
+        /// Channel that failed.
+        channel: String,
+        /// Reason for failure.
+        reason: String,
+    },
+    /// Invalid notification preferences.
+    InvalidNotificationPreferences {
+        /// Reason for invalidity.
+        reason: String,
+    },
 }
 
 impl fmt::Display for DomainError {
@@ -377,6 +391,12 @@ impl fmt::Display for DomainError {
             }
             Self::FeeCalculationFailed { reason } => {
                 write!(f, "fee calculation failed: {}", reason)
+            }
+            Self::ConfirmationFailed { channel, reason } => {
+                write!(f, "confirmation failed on channel {}: {}", channel, reason)
+            }
+            Self::InvalidNotificationPreferences { reason } => {
+                write!(f, "invalid notification preferences: {}", reason)
             }
         }
     }
