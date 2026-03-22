@@ -135,19 +135,18 @@ fn encode_settlement_method(method: SettlementMethod) -> [u8; 2] {
     }
 }
 
-/// Decodes [`SettlementMethod`] from two SBE bytes.
+/// Decodes [`SettlementMethod`] from two SBE bytes: `method_tag` + `blockchain_tag`.
 ///
 /// # Errors
 ///
-/// Returns [`SbeError::InvalidEnumValue`] if either byte is unrecognised.
+/// Returns [`SbeError::InvalidEnumValue`] if `method_tag` is unrecognized,
+/// or if it's `OnChain` and `blockchain_tag` is unrecognized.
 #[inline]
-fn decode_settlement_method(method_tag: u8, blockchain_tag: u8) -> SbeResult<SettlementMethod> {
-    match method_tag {
+fn decode_settlement_method(buffer: &[u8; 2]) -> SbeResult<SettlementMethod> {
+    match buffer[0] {
         0 => Ok(SettlementMethod::OffChain),
-        1 => Ok(SettlementMethod::OnChain(decode_blockchain(
-            blockchain_tag,
-        )?)),
-        _ => Err(SbeError::InvalidEnumValue(method_tag)),
+        1 => Ok(SettlementMethod::OnChain(decode_blockchain(buffer[1])?)),
+        _ => Err(SbeError::InvalidEnumValue(buffer[0])),
     }
 }
 
@@ -194,10 +193,10 @@ fn decode_optional_fee(buffer: &[u8]) -> SbeResult<Option<rust_decimal::Decimal>
             available: buffer.len(),
         });
     }
-    if buffer[0] == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(SbeDecimal::decode(&buffer[1..])?.to_decimal()?))
+    match buffer[0] {
+        0 => Ok(None),
+        1 => Ok(Some(SbeDecimal::decode(&buffer[1..])?.to_decimal()?)),
+        _ => Err(SbeError::InvalidEnumValue(buffer[0])),
     }
 }
 
@@ -753,20 +752,35 @@ impl SbeDecode for TradeExecuted {
             .ok_or_else(|| SbeError::InvalidTimestamp("invalid executed_at".to_string()))?;
         offset += 8;
 
-        // takerFee
-        let taker_fee = decode_optional_fee(&buffer[offset..])?;
-        offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
+        // takerFee, makerFee, netFee, settlementMethod
+        // These fields were introduced in version 2 of the TradeExecuted schema.
+        // For older versions, default fees to None and settlement_method to OffChain.
+        let (taker_fee, maker_fee, net_fee, settlement_method) = if _version >= 2 {
+            // takerFee
+            let taker_fee = decode_optional_fee(&buffer[offset..])?;
+            offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
 
-        // makerFee
-        let maker_fee = decode_optional_fee(&buffer[offset..])?;
-        offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
+            // makerFee
+            let maker_fee = decode_optional_fee(&buffer[offset..])?;
+            offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
 
-        // netFee
-        let net_fee = decode_optional_fee(&buffer[offset..])?;
-        offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
+            // netFee
+            let net_fee = decode_optional_fee(&buffer[offset..])?;
+            offset += TradeExecutedCodec::OPTIONAL_FEE_SIZE;
 
-        // settlementMethod (method_tag + blockchain_tag)
-        let settlement_method = decode_settlement_method(buffer[offset], buffer[offset + 1])?;
+            // settlementMethod (method_tag + blockchain_tag)
+            if offset + 2 > buffer.len() {
+                return Err(SbeError::InvalidTimestamp(
+                    "buffer too short for settlement_method".to_string(),
+                ));
+            }
+            let settlement_method =
+                decode_settlement_method(&[buffer[offset], buffer[offset + 1]])?;
+
+            (taker_fee, maker_fee, net_fee, settlement_method)
+        } else {
+            (None, None, None, SettlementMethod::OffChain)
+        };
 
         // Skip to variable fields (using block_length from header for forward compatibility)
         let mut offset = MESSAGE_HEADER_SIZE + block_length as usize;
