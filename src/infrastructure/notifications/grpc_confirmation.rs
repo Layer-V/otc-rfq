@@ -82,8 +82,11 @@ impl InMemoryGrpcClientRegistry {
 
 impl GrpcClientRegistry for InMemoryGrpcClientRegistry {
     fn get_streams(&self, counterparty_id: &CounterpartyId) -> Vec<StreamHandle> {
-        // Use try_read to avoid blocking in async context
-        // If lock is poisoned or unavailable, return empty vec
+        // LIMITATION: Using try_read() which can fail spuriously under contention
+        // Reviewers suggested using read().await or DashMap for better reliability
+        // However, this requires making the trait async (breaking change) or using DashMap
+        // For now, we accept potential spurious failures under high contention
+        // TODO: Refactor to async trait or DashMap in production
         self.streams
             .try_read()
             .ok()
