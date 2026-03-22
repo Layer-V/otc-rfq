@@ -73,10 +73,12 @@ impl ConfirmationConfig {
     /// Calculates the retry delay for a given attempt using exponential backoff.
     #[must_use]
     pub fn retry_delay(&self, attempt: u32) -> Duration {
+        // Cap the exponent to prevent overflow (2^10 = 1024 is more than enough)
+        let capped_attempt = attempt.min(10);
         let delay_ms = self
             .initial_retry_delay
             .as_millis()
-            .saturating_mul(2_u128.saturating_pow(attempt));
+            .saturating_mul(2_u128.saturating_pow(capped_attempt));
         let delay = Duration::from_millis(delay_ms.min(u64::MAX as u128) as u64);
         delay.min(self.max_retry_delay)
     }
@@ -143,9 +145,23 @@ impl MultiChannelConfirmationService {
         Self { adapters, config }
     }
 
-    /// Sends confirmation via a single channel with retry logic.
-    async fn send_with_retry(
-        &self,
+    /// Sends confirmation with timeout (static version).
+    async fn send_with_timeout_static(
+        config: &ConfirmationConfig,
+        adapter: &Arc<dyn ConfirmationChannelAdapter>,
+        confirmation: &TradeConfirmation,
+    ) -> DomainResult<()> {
+        tokio::time::timeout(config.timeout_per_channel, adapter.send(confirmation))
+            .await
+            .map_err(|_| DomainError::ConfirmationFailed {
+                channel: adapter.channel().to_string(),
+                reason: "Timeout".to_string(),
+            })?
+    }
+
+    /// Sends confirmation via a single channel with retry logic (static version).
+    async fn send_with_retry_static(
+        config: &ConfirmationConfig,
         adapter: &Arc<dyn ConfirmationChannelAdapter>,
         confirmation: &TradeConfirmation,
     ) -> ChannelDeliveryStatus {
@@ -153,7 +169,7 @@ impl MultiChannelConfirmationService {
         let mut attempts = 0;
 
         loop {
-            match self.send_with_timeout(adapter, confirmation).await {
+            match Self::send_with_timeout_static(config, adapter, confirmation).await {
                 Ok(()) => {
                     tracing::info!(
                         channel = %channel,
@@ -166,7 +182,7 @@ impl MultiChannelConfirmationService {
                 Err(e) => {
                     attempts = attempts.saturating_add(1);
 
-                    if attempts > self.config.max_retry_attempts {
+                    if attempts > config.max_retry_attempts {
                         tracing::error!(
                             channel = %channel,
                             trade_id = %confirmation.trade_id(),
@@ -181,7 +197,7 @@ impl MultiChannelConfirmationService {
                         );
                     }
 
-                    let delay = self.config.retry_delay(attempts.saturating_sub(1));
+                    let delay = config.retry_delay(attempts.saturating_sub(1));
                     tracing::warn!(
                         channel = %channel,
                         trade_id = %confirmation.trade_id(),
@@ -196,18 +212,24 @@ impl MultiChannelConfirmationService {
         }
     }
 
+    /// Sends confirmation via a single channel with retry logic.
+    #[allow(dead_code)]
+    async fn send_with_retry(
+        &self,
+        adapter: &Arc<dyn ConfirmationChannelAdapter>,
+        confirmation: &TradeConfirmation,
+    ) -> ChannelDeliveryStatus {
+        Self::send_with_retry_static(&self.config, adapter, confirmation).await
+    }
+
     /// Sends confirmation with timeout.
+    #[allow(dead_code)]
     async fn send_with_timeout(
         &self,
         adapter: &Arc<dyn ConfirmationChannelAdapter>,
         confirmation: &TradeConfirmation,
     ) -> DomainResult<()> {
-        tokio::time::timeout(self.config.timeout_per_channel, adapter.send(confirmation))
-            .await
-            .map_err(|_| DomainError::ConfirmationFailed {
-                channel: adapter.channel().to_string(),
-                reason: format!("Timeout after {:?}", self.config.timeout_per_channel),
-            })?
+        Self::send_with_timeout_static(&self.config, adapter, confirmation).await
     }
 }
 
@@ -256,10 +278,10 @@ impl ConfirmationService for MultiChannelConfirmationService {
         for adapter in active_adapters {
             let adapter = Arc::clone(adapter);
             let confirmation = confirmation.clone();
-            let service = self.clone_for_task();
+            let config = self.config.clone();
 
             tasks.push(tokio::spawn(async move {
-                service.send_with_retry(&adapter, &confirmation).await
+                Self::send_with_retry_static(&config, &adapter, &confirmation).await
             }));
         }
 
@@ -287,16 +309,6 @@ impl ConfirmationService for MultiChannelConfirmationService {
         );
 
         status
-    }
-}
-
-impl MultiChannelConfirmationService {
-    /// Clones the service for use in async tasks.
-    fn clone_for_task(&self) -> Self {
-        Self {
-            adapters: self.adapters.clone(),
-            config: self.config.clone(),
-        }
     }
 }
 
