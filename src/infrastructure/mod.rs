@@ -27,6 +27,7 @@
 pub mod blockchain;
 pub mod http_clients;
 pub mod last_look;
+pub mod messaging;
 pub mod notifications;
 pub mod persistence;
 pub mod sbe;

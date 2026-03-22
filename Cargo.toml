@@ -65,6 +65,9 @@ jsonwebtoken = { workspace = true }
 config = { workspace = true }
 dotenvy = { workspace = true }
 
+# Messaging
+async-nats = { workspace = true, optional = true }
+
 # Utilities
 async-trait = { workspace = true }
 futures = { workspace = true }
@@ -156,6 +159,9 @@ jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 config = "0.15"
 dotenvy = "0.15"
 
+# Messaging
+async-nats = "0.38"
+
 # Utilities
 async-trait = "0.1"
 futures = "0.3"
@@ -186,6 +192,10 @@ ironfix-engine = "0.1"
 ironsbe-core = "0.1"
 ironsbe-schema = "0.1"
 ironsbe-codegen = "0.1"
+
+[features]
+default = []
+nats = ["dep:async-nats"]
 
 [lints.rust]
 unsafe_code = "deny"
