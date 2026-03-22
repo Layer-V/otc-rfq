@@ -59,18 +59,22 @@ impl NatsPublisherWorker {
                     .into());
                 }
             }
-            Err(_) => {
-                info!(
-                    "Creating JetStream stream: {} for subjects {:?}",
-                    stream_name, subjects
-                );
-                jetstream
-                    .create_stream(Config {
-                        name: stream_name.to_string(),
-                        subjects,
-                        ..Default::default()
-                    })
-                    .await?;
+            Err(err) => {
+                if err.to_string().to_lowercase().contains("stream not found") {
+                    info!(
+                        "Creating JetStream stream: {} for subjects {:?}",
+                        stream_name, subjects
+                    );
+                    jetstream
+                        .create_stream(Config {
+                            name: stream_name.to_string(),
+                            subjects,
+                            ..Default::default()
+                        })
+                        .await?;
+                } else {
+                    return Err(Box::new(err));
+                }
             }
         }
 
@@ -161,7 +165,7 @@ impl NatsPublisherWorker {
             retry_count += 1;
             if retry_count > max_retries {
                 error!("Exceeded max retries ({}). Writing to DLQ.", max_retries);
-                if let Err(e) = Self::write_to_dlq(subject, payload).await {
+                if let Err(e) = Self::write_to_dlq(subject, payload, None).await {
                     error!("DLQ write failed for {}: {}", subject, e);
                 }
                 return;
@@ -179,14 +183,19 @@ impl NatsPublisherWorker {
         }
     }
 
-    async fn write_to_dlq(subject: &str, payload: &str) -> std::io::Result<()> {
+    async fn write_to_dlq(
+        subject: &str,
+        payload: &str,
+        path_override: Option<&str>,
+    ) -> std::io::Result<()> {
         use tokio::io::AsyncWriteExt;
-        let dlq_path =
+        let env_path =
             std::env::var("NATS_DLQ_PATH").unwrap_or_else(|_| "nats_dlq.txt".to_string());
+        let dlq_path = path_override.unwrap_or(&env_path);
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&dlq_path)
+            .open(dlq_path)
             .await?;
         let entry = format!("[{}] {}\n", subject, payload);
         file.write_all(entry.as_bytes()).await?;
@@ -204,15 +213,18 @@ mod tests {
         let subject = "test.dlq.subject";
         let payload = r#"{"test":"dlq_payload"}"#;
 
-        // Ensure file does not exist or clean up first (optional, but good for isolation)
-        let _ = tokio::fs::remove_file("nats_dlq.txt").await;
+        let temp_dir = std::env::temp_dir();
+        let dlq_path = temp_dir
+            .join(format!("nats_dlq_{}.txt", uuid::Uuid::new_v4()))
+            .to_string_lossy()
+            .to_string();
 
-        let result = NatsPublisherWorker::write_to_dlq(subject, payload).await;
+        let result = NatsPublisherWorker::write_to_dlq(subject, payload, Some(&dlq_path)).await;
         assert!(result.is_ok());
 
-        let contents = tokio::fs::read_to_string("nats_dlq.txt").await.unwrap();
+        let contents = tokio::fs::read_to_string(&dlq_path).await.unwrap();
         assert!(contents.contains(&format!("[{}] {}\n", subject, payload)));
 
-        let _ = tokio::fs::remove_file("nats_dlq.txt").await;
+        let _ = tokio::fs::remove_file(&dlq_path).await;
     }
 }

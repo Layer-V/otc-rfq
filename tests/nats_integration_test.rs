@@ -77,7 +77,7 @@ async fn test_nats_jetstream_publishing() {
     // 5. Verify the stream contains our message
     let consumer = stream
         .create_consumer(jetstream::consumer::pull::Config {
-            durable_name: Some("test_consumer".to_string()),
+            durable_name: Some(format!("test_consumer_{}", uuid::Uuid::new_v4())),
             ..Default::default()
         })
         .await
