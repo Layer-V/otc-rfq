@@ -39,10 +39,25 @@ impl NatsPublisherWorker {
         let subjects = vec![format!("{}.>", subject_prefix)];
 
         match jetstream.get_stream(stream_name).await {
-            Ok(_stream) => {
+            Ok(mut stream) => {
                 info!("Found existing JetStream stream: {}", stream_name);
-                // Optionally update the stream config to ensure subjects cover our prefix
-                // For simplicity, we assume it's created properly or we just use it.
+                // Validate that the existing stream is configured with the required subject.
+                let required_subject = format!("{}.>", subject_prefix);
+                let info = stream.info().await?;
+                let has_required_subject =
+                    info.config.subjects.iter().any(|s| s == &required_subject);
+
+                if !has_required_subject {
+                    error!(
+                        "JetStream stream '{}' exists but is missing required subject '{}'",
+                        stream_name, required_subject
+                    );
+                    return Err(format!(
+                        "JetStream stream '{}' is misconfigured: missing subject '{}'",
+                        stream_name, required_subject
+                    )
+                    .into());
+                }
             }
             Err(_) => {
                 info!(
@@ -97,16 +112,36 @@ impl NatsPublisherWorker {
     }
 
     /// Publishes an event to JetStream with exponential backoff retry.
+    /// Publishes an event to JetStream with exponential backoff retry.
     async fn publish_with_retry(&self, subject: &str, payload: &str) {
         let max_retries = 5;
         let mut retry_count = 0;
         let mut delay = Duration::from_millis(100);
         let payload_bytes = bytes::Bytes::from(payload.to_string());
 
+        let mut headers = async_nats::HeaderMap::new();
+        #[allow(clippy::collapsible_if)]
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) {
+            if let Some(metadata) = json.get("metadata") {
+                if let Some(e_type) = metadata.get("event_type").and_then(|v| v.as_str()) {
+                    headers.insert("event_type", e_type);
+                }
+                if let Some(v) = metadata.get("version").and_then(|v| v.as_u64()) {
+                    headers.insert("version", v.to_string().as_str());
+                }
+                if let Some(ts) = metadata.get("timestamp").and_then(|v| v.as_u64()) {
+                    headers.insert("timestamp", ts.to_string().as_str());
+                }
+                if let Some(e_id) = metadata.get("event_id").and_then(|v| v.as_str()) {
+                    headers.insert("correlation_id", e_id);
+                }
+            }
+        }
+
         loop {
             match self
                 .jetstream
-                .publish(subject.to_string(), payload_bytes.clone())
+                .publish_with_headers(subject.to_string(), headers.clone(), payload_bytes.clone())
                 .await
             {
                 Ok(ack) => match ack.await {
@@ -117,22 +152,17 @@ impl NatsPublisherWorker {
                         );
                         return;
                     }
-                    Err(e) => {
-                        warn!("JetStream ack error for {}: {}", subject, e);
-                    }
+                    Err(e) => warn!("JetStream ack error for {}: {}", subject, e),
                 },
-                Err(e) => {
-                    warn!("Failed to publish to {}: {}", subject, e);
-                }
+                Err(e) => warn!("Failed to publish to {}: {}", subject, e),
             }
 
             retry_count += 1;
             if retry_count > max_retries {
-                error!(
-                    "Exceeded max retries ({}) publishing event to {}. Dropping event.",
-                    max_retries, subject
-                );
-                // In a production system, here we would push the payload to a local DLQ file
+                error!("Exceeded max retries ({}). Writing to DLQ.", max_retries);
+                if let Err(e) = Self::write_to_dlq(subject, payload).await {
+                    error!("DLQ write failed for {}: {}", subject, e);
+                }
                 return;
             }
 
@@ -144,7 +174,43 @@ impl NatsPublisherWorker {
                 max_retries
             );
             tokio::time::sleep(delay).await;
-            delay *= 2; // Exponential backoff
+            delay = delay.saturating_mul(2);
         }
     }
+
+    async fn write_to_dlq(subject: &str, payload: &str) -> std::io::Result<()> {
+        use tokio::io::AsyncWriteExt;
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("nats_dlq.txt")
+            .await?;
+        let entry = format!("[{}] {}\n", subject, payload);
+        file.write_all(entry.as_bytes()).await?;
+        Ok(())
+    }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_write_to_dlq() {
+        let subject = "test.dlq.subject";
+        let payload = r#"{"test":"dlq_payload"}"#;
+        
+        // Ensure file does not exist or clean up first (optional, but good for isolation)
+        let _ = tokio::fs::remove_file("nats_dlq.txt").await;
+        
+        let result = NatsPublisherWorker::write_to_dlq(subject, payload).await;
+        assert!(result.is_ok());
+
+        let contents = tokio::fs::read_to_string("nats_dlq.txt").await.unwrap();
+        assert!(contents.contains(&format!("[{}] {}\n", subject, payload)));
+        
+        let _ = tokio::fs::remove_file("nats_dlq.txt").await;
+    }
+}
+

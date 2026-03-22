@@ -20,7 +20,7 @@ use otc_rfq::infrastructure::messaging::nats_worker::NatsPublisherWorker;
 #[ignore = "Requires local Docker daemon for testcontainers"]
 async fn test_nats_jetstream_publishing() {
     // 1. Start NATS server with JetStream enabled
-    let nats_image = GenericImage::new("nats", "latest")
+    let nats_image = GenericImage::new("nats", "2.10.18")
         .with_exposed_port(testcontainers::core::ContainerPort::Tcp(4222))
         .with_cmd(["-js".to_string()]);
     let nats_container: ContainerAsync<GenericImage> = nats_image
