@@ -6,10 +6,10 @@
 //! that are sent to counterparties via multiple channels (WebSocket,
 //! Email, API callbacks, gRPC).
 
+use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{
     CounterpartyId, Price, Quantity, RfqId, SettlementMethod, TradeId,
 };
-use crate::domain::value_objects::timestamp::Timestamp;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -292,10 +292,18 @@ impl fmt::Display for ConfirmationStatus {
         match self {
             Self::AllSent => write!(f, "All confirmations sent successfully"),
             Self::PartialSuccess { failed_channels } => {
-                write!(f, "Partial success ({} channels failed)", failed_channels.len())
+                write!(
+                    f,
+                    "Partial success ({} channels failed)",
+                    failed_channels.len()
+                )
             }
             Self::AllFailed { channel_statuses } => {
-                write!(f, "All confirmations failed ({} channels)", channel_statuses.len())
+                write!(
+                    f,
+                    "All confirmations failed ({} channels)",
+                    channel_statuses.len()
+                )
             }
         }
     }
@@ -327,12 +335,12 @@ mod tests {
     #[test]
     fn trade_confirmation_new() {
         use crate::domain::value_objects::Blockchain;
-        
+
         let trade_id = TradeId::generate();
         let rfq_id = RfqId::generate();
         let buyer_id = CounterpartyId::new("buyer-1");
         let seller_id = CounterpartyId::new("seller-1");
-        
+
         let confirmation = TradeConfirmation::new(
             trade_id,
             rfq_id,

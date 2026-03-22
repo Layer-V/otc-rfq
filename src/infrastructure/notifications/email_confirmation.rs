@@ -6,11 +6,10 @@ use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
 use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
 use async_trait::async_trait;
-use lettre::message::{header, MultiPart, SinglePart};
+use lettre::message::{MultiPart, SinglePart, header};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// SMTP configuration for email delivery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,10 +52,7 @@ impl EmailConfirmationAdapter {
     /// Creates a new email confirmation adapter.
     #[must_use]
     pub fn new(config: SmtpConfig, to_address: String) -> Self {
-        Self {
-            config,
-            to_address,
-        }
+        Self { config, to_address }
     }
 
     /// Generates HTML email body for trade confirmation.
@@ -210,16 +206,14 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
                         reason: format!("Invalid from address: {}", e),
                     })?,
             )
-            .to(self.to_address.parse().map_err(|e| {
-                DomainError::ConfirmationFailed {
+            .to(self
+                .to_address
+                .parse()
+                .map_err(|e| DomainError::ConfirmationFailed {
                     channel: "EMAIL".to_string(),
                     reason: format!("Invalid to address: {}", e),
-                }
-            })?)
-            .subject(format!(
-                "Trade Confirmation - {}",
-                confirmation.trade_id()
-            ))
+                })?)
+            .subject(format!("Trade Confirmation - {}", confirmation.trade_id()))
             .multipart(
                 MultiPart::alternative()
                     .singlepart(
@@ -239,10 +233,7 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
             })?;
 
         // Create SMTP transport
-        let creds = Credentials::new(
-            self.config.username.clone(),
-            self.config.password.clone(),
-        );
+        let creds = Credentials::new(self.config.username.clone(), self.config.password.clone());
 
         let mailer: AsyncSmtpTransport<Tokio1Executor> =
             AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.host)
@@ -255,12 +246,13 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
                 .build();
 
         // Send email
-        mailer.send(email).await.map_err(|e| {
-            DomainError::ConfirmationFailed {
+        mailer
+            .send(email)
+            .await
+            .map_err(|e| DomainError::ConfirmationFailed {
                 channel: "EMAIL".to_string(),
                 reason: format!("SMTP send failed: {}", e),
-            }
-        })?;
+            })?;
 
         tracing::info!(
             trade_id = %confirmation.trade_id(),

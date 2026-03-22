@@ -205,13 +205,23 @@ impl NotificationPreferences {
         }
 
         let parts: Vec<&str> = email.split('@').collect();
-        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+        if parts.len() != 2 {
             return Err(DomainError::InvalidNotificationPreferences {
                 reason: "Invalid email address format".to_string(),
             });
         }
 
-        if !parts[1].contains('.') {
+        let local = parts.first().copied().unwrap_or("");
+        let domain = parts.get(1).copied().unwrap_or("");
+
+        if local.is_empty() || domain.is_empty() {
+            return Err(DomainError::InvalidNotificationPreferences {
+                reason: "Invalid email address format".to_string(),
+            });
+        }
+
+        // Check domain has at least one dot
+        if !domain.contains('.') {
             return Err(DomainError::InvalidNotificationPreferences {
                 reason: "Invalid email domain".to_string(),
             });
@@ -310,45 +320,29 @@ mod tests {
 
     #[test]
     fn new_validates_email_channel_requires_address() {
-        let result = NotificationPreferences::new(
-            vec![ConfirmationChannel::Email],
-            None,
-            None,
-            None,
-        );
+        let result =
+            NotificationPreferences::new(vec![ConfirmationChannel::Email], None, None, None);
         assert!(result.is_err());
     }
 
     #[test]
     fn new_validates_api_callback_requires_url() {
-        let result = NotificationPreferences::new(
-            vec![ConfirmationChannel::ApiCallback],
-            None,
-            None,
-            None,
-        );
+        let result =
+            NotificationPreferences::new(vec![ConfirmationChannel::ApiCallback], None, None, None);
         assert!(result.is_err());
     }
 
     #[test]
     fn new_validates_grpc_requires_endpoint() {
-        let result = NotificationPreferences::new(
-            vec![ConfirmationChannel::Grpc],
-            None,
-            None,
-            None,
-        );
+        let result =
+            NotificationPreferences::new(vec![ConfirmationChannel::Grpc], None, None, None);
         assert!(result.is_err());
     }
 
     #[test]
     fn new_allows_websocket_without_config() {
-        let result = NotificationPreferences::new(
-            vec![ConfirmationChannel::WebSocket],
-            None,
-            None,
-            None,
-        );
+        let result =
+            NotificationPreferences::new(vec![ConfirmationChannel::WebSocket], None, None, None);
         assert!(result.is_ok());
     }
 

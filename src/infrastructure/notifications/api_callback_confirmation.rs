@@ -8,7 +8,6 @@ use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfi
 use async_trait::async_trait;
 use reqwest;
 use serde_json;
-use std::fmt;
 use std::time::Duration;
 
 /// API callback confirmation adapter.
@@ -58,12 +57,11 @@ impl ApiCallbackConfirmationAdapter {
 impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
     async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
         // Serialize confirmation to JSON
-        let json_body = serde_json::to_string(confirmation).map_err(|e| {
-            DomainError::ConfirmationFailed {
+        let json_body =
+            serde_json::to_string(confirmation).map_err(|e| DomainError::ConfirmationFailed {
                 channel: "API_CALLBACK".to_string(),
                 reason: format!("JSON serialization failed: {}", e),
-            }
-        })?;
+            })?;
 
         // Send POST request
         let response = self
@@ -93,7 +91,11 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
             // 5xx errors should be retried
             Err(DomainError::ConfirmationFailed {
                 channel: "API_CALLBACK".to_string(),
-                reason: format!("Server error ({}): {}", status, status.canonical_reason().unwrap_or("Unknown")),
+                reason: format!(
+                    "Server error ({}): {}",
+                    status,
+                    status.canonical_reason().unwrap_or("Unknown")
+                ),
             })
         } else {
             // 4xx errors should not be retried
@@ -101,7 +103,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unable to read response body".to_string());
-            
+
             tracing::error!(
                 trade_id = %confirmation.trade_id(),
                 webhook_url = %self.webhook_url,
@@ -109,7 +111,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
                 body = %body,
                 "API callback confirmation failed with client error"
             );
-            
+
             Err(DomainError::ConfirmationFailed {
                 channel: "API_CALLBACK".to_string(),
                 reason: format!("Client error ({}): {}", status, body),
@@ -174,10 +176,9 @@ mod tests {
 
     #[tokio::test]
     async fn send_invalid_url_fails() {
-        let adapter = ApiCallbackConfirmationAdapter::with_default_timeout(
-            "not-a-valid-url".to_string(),
-        )
-        .unwrap();
+        let adapter =
+            ApiCallbackConfirmationAdapter::with_default_timeout("not-a-valid-url".to_string())
+                .unwrap();
         let confirmation = create_test_confirmation();
 
         let result = adapter.send(&confirmation).await;

@@ -644,7 +644,9 @@ impl Counterparty {
     /// Returns the notification preferences.
     #[inline]
     #[must_use]
-    pub fn notification_preferences(&self) -> &crate::domain::value_objects::NotificationPreferences {
+    pub fn notification_preferences(
+        &self,
+    ) -> &crate::domain::value_objects::NotificationPreferences {
         &self.notification_preferences
     }
 

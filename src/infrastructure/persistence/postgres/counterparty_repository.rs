@@ -43,16 +43,17 @@ impl CounterpartyRepository for PostgresCounterpartyRepository {
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
         let wallet_addresses = serde_json::to_value(counterparty.wallet_addresses())
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
-        
+
         let prefs = counterparty.notification_preferences();
-        let notification_channels: Vec<String> = prefs.enabled_channels()
+        let notification_channels: Vec<String> = prefs
+            .enabled_channels()
             .iter()
             .map(|c| c.to_string())
             .collect();
         let notification_email = prefs.email_address().map(|s| s.to_string());
         let notification_webhook_url = prefs.webhook_url().map(|s| s.to_string());
         let notification_grpc_endpoint = prefs.grpc_endpoint().map(|s| s.to_string());
-        
+
         let active = counterparty.is_active();
         let created_at = counterparty.created_at().timestamp_millis();
         let updated_at = counterparty.updated_at().timestamp_millis();
@@ -246,21 +247,24 @@ impl CounterpartyRow {
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
         let wallet_addresses: Vec<WalletAddress> = serde_json::from_value(self.wallet_addresses)
             .map_err(|e| RepositoryError::serialization(e.to_string()))?;
-        
+
         use crate::domain::value_objects::{ConfirmationChannel, NotificationPreferences};
-        let channels: Result<Vec<ConfirmationChannel>, _> = self.notification_channels
+        let channels: Result<Vec<ConfirmationChannel>, _> = self
+            .notification_channels
             .iter()
             .map(|s| serde_json::from_str(&format!(r#""{}""#, s)))
             .collect();
-        let channels = channels.map_err(|e: serde_json::Error| RepositoryError::serialization(e.to_string()))?;
-        
+        let channels = channels
+            .map_err(|e: serde_json::Error| RepositoryError::serialization(e.to_string()))?;
+
         let notification_preferences = NotificationPreferences::new(
             channels,
             self.notification_email,
             self.notification_webhook_url,
             self.notification_grpc_endpoint,
-        ).map_err(|e| RepositoryError::serialization(e.to_string()))?;
-        
+        )
+        .map_err(|e| RepositoryError::serialization(e.to_string()))?;
+
         let created_at = Timestamp::from_millis(self.created_at).ok_or_else(|| {
             RepositoryError::serialization("invalid created_at timestamp".to_string())
         })?;

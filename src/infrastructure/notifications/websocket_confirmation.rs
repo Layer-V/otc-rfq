@@ -4,8 +4,8 @@
 
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
 use crate::domain::value_objects::CounterpartyId;
+use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
 use async_trait::async_trait;
 use serde_json;
 use std::collections::HashMap;
@@ -52,11 +52,7 @@ impl InMemorySessionRegistry {
     }
 
     /// Registers a session for a counterparty.
-    pub async fn register_session(
-        &self,
-        counterparty_id: CounterpartyId,
-        session: SessionHandle,
-    ) {
+    pub async fn register_session(&self, counterparty_id: CounterpartyId, session: SessionHandle) {
         let mut sessions = self.sessions.write().await;
         sessions
             .entry(counterparty_id)
@@ -90,9 +86,7 @@ impl SessionRegistry for InMemorySessionRegistry {
         // Note: This is a blocking call in an async context
         // In production, you'd want to use tokio::task::block_in_place or similar
         let sessions = self.sessions.blocking_read();
-        sessions
-            .get(counterparty_id)
-            .map(|v| v.clone())
+        sessions.get(counterparty_id).cloned()
             .unwrap_or_default()
     }
 }
@@ -115,12 +109,11 @@ impl WebSocketConfirmationAdapter {
 impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
     async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
         // Serialize confirmation to JSON
-        let message = serde_json::to_string(confirmation).map_err(|e| {
-            DomainError::ConfirmationFailed {
+        let message =
+            serde_json::to_string(confirmation).map_err(|e| DomainError::ConfirmationFailed {
                 channel: "WEBSOCKET".to_string(),
                 reason: format!("JSON serialization failed: {}", e),
-            }
-        })?;
+            })?;
 
         // Get sessions for both buyer and seller
         let buyer_sessions = self.session_registry.get_sessions(confirmation.buyer_id());
@@ -268,7 +261,7 @@ mod tests {
     async fn send_to_buyer_session() {
         let registry = Arc::new(InMemorySessionRegistry::new());
         let session = Arc::new(MockSession::new(true, false));
-        
+
         registry
             .register_session(CounterpartyId::new("buyer-1"), session.clone())
             .await;
@@ -286,7 +279,7 @@ mod tests {
         let registry = Arc::new(InMemorySessionRegistry::new());
         let buyer_session = Arc::new(MockSession::new(true, false));
         let seller_session = Arc::new(MockSession::new(true, false));
-        
+
         registry
             .register_session(CounterpartyId::new("buyer-1"), buyer_session.clone())
             .await;
@@ -307,7 +300,7 @@ mod tests {
     async fn send_disconnected_session_fails() {
         let registry = Arc::new(InMemorySessionRegistry::new());
         let session = Arc::new(MockSession::new(false, false));
-        
+
         registry
             .register_session(CounterpartyId::new("buyer-1"), session.clone())
             .await;
@@ -325,7 +318,7 @@ mod tests {
         let registry = Arc::new(InMemorySessionRegistry::new());
         let good_session = Arc::new(MockSession::new(true, false));
         let bad_session = Arc::new(MockSession::new(true, true));
-        
+
         registry
             .register_session(CounterpartyId::new("buyer-1"), good_session.clone())
             .await;
@@ -347,7 +340,7 @@ mod tests {
         let registry = InMemorySessionRegistry::new();
         let connected = Arc::new(MockSession::new(true, false));
         let disconnected = Arc::new(MockSession::new(false, false));
-        
+
         registry
             .register_session(CounterpartyId::new("buyer-1"), connected.clone())
             .await;

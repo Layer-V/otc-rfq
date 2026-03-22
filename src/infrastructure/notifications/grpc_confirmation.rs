@@ -4,8 +4,8 @@
 
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
 use crate::domain::value_objects::CounterpartyId;
+use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt;
@@ -85,9 +85,7 @@ impl GrpcClientRegistry for InMemoryGrpcClientRegistry {
         // Note: This is a blocking call in an async context
         // In production, you'd want to use tokio::task::block_in_place or similar
         let streams = self.streams.blocking_read();
-        streams
-            .get(counterparty_id)
-            .map(|v| v.clone())
+        streams.get(counterparty_id).cloned()
             .unwrap_or_default()
     }
 }
@@ -255,7 +253,7 @@ mod tests {
     async fn send_to_buyer_stream() {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let stream = Arc::new(MockStream::new(true, false));
-        
+
         registry
             .register_stream(CounterpartyId::new("buyer-1"), stream.clone())
             .await;
@@ -273,7 +271,7 @@ mod tests {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let buyer_stream = Arc::new(MockStream::new(true, false));
         let seller_stream = Arc::new(MockStream::new(true, false));
-        
+
         registry
             .register_stream(CounterpartyId::new("buyer-1"), buyer_stream.clone())
             .await;
@@ -294,7 +292,7 @@ mod tests {
     async fn send_inactive_stream_fails() {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let stream = Arc::new(MockStream::new(false, false));
-        
+
         registry
             .register_stream(CounterpartyId::new("buyer-1"), stream.clone())
             .await;
@@ -312,7 +310,7 @@ mod tests {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let good_stream = Arc::new(MockStream::new(true, false));
         let bad_stream = Arc::new(MockStream::new(true, true));
-        
+
         registry
             .register_stream(CounterpartyId::new("buyer-1"), good_stream.clone())
             .await;
@@ -334,7 +332,7 @@ mod tests {
         let registry = InMemoryGrpcClientRegistry::new();
         let active = Arc::new(MockStream::new(true, false));
         let inactive = Arc::new(MockStream::new(false, false));
-        
+
         registry
             .register_stream(CounterpartyId::new("buyer-1"), active.clone())
             .await;

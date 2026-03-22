@@ -8,10 +8,10 @@
 //! (WebSocket, Email, API callbacks, gRPC).
 
 use crate::domain::errors::{DomainError, DomainResult};
+use crate::domain::value_objects::NotificationPreferences;
 use crate::domain::value_objects::confirmation::{
     ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, TradeConfirmation,
 };
-use crate::domain::value_objects::NotificationPreferences;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -165,7 +165,7 @@ impl MultiChannelConfirmationService {
                 }
                 Err(e) => {
                     attempts = attempts.saturating_add(1);
-                    
+
                     if attempts > self.config.max_retry_attempts {
                         tracing::error!(
                             channel = %channel,
@@ -227,7 +227,7 @@ impl ConfirmationService for MultiChannelConfirmationService {
         }
 
         let enabled_channels = preferences.enabled_channels();
-        
+
         // Find adapters for enabled channels
         let active_adapters: Vec<_> = self
             .adapters
@@ -257,7 +257,7 @@ impl ConfirmationService for MultiChannelConfirmationService {
             let adapter = Arc::clone(adapter);
             let confirmation = confirmation.clone();
             let service = self.clone_for_task();
-            
+
             tasks.push(tokio::spawn(async move {
                 service.send_with_retry(&adapter, &confirmation).await
             }));
@@ -279,7 +279,7 @@ impl ConfirmationService for MultiChannelConfirmationService {
         }
 
         let status = ConfirmationStatus::from_results(results);
-        
+
         tracing::info!(
             trade_id = %confirmation.trade_id(),
             status = %status,
@@ -335,7 +335,7 @@ mod tests {
     impl ConfirmationChannelAdapter for MockAdapter {
         async fn send(&self, _confirmation: &TradeConfirmation) -> DomainResult<()> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
-            
+
             if self.should_fail {
                 Err(DomainError::ConfirmationFailed {
                     channel: self.channel.to_string(),
@@ -378,7 +378,7 @@ mod tests {
     #[test]
     fn confirmation_config_retry_delay_exponential_backoff() {
         let config = ConfirmationConfig::default();
-        
+
         assert_eq!(config.retry_delay(0), Duration::from_secs(1));
         assert_eq!(config.retry_delay(1), Duration::from_secs(2));
         assert_eq!(config.retry_delay(2), Duration::from_secs(4));
@@ -389,7 +389,8 @@ mod tests {
 
     #[tokio::test]
     async fn send_confirmation_no_channels_enabled() {
-        let service = MultiChannelConfirmationService::new(vec![], ConfirmationConfig::for_testing());
+        let service =
+            MultiChannelConfirmationService::new(vec![], ConfirmationConfig::for_testing());
         let confirmation = create_test_confirmation();
         let preferences = NotificationPreferences::none();
 
@@ -404,9 +405,10 @@ mod tests {
             vec![adapter.clone()],
             ConfirmationConfig::for_testing(),
         );
-        
+
         let confirmation = create_test_confirmation();
-        let preferences = NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
+        let preferences =
+            NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
 
         let status = service.send_confirmation(&confirmation, &preferences).await;
         assert!(status.is_all_sent());
@@ -420,9 +422,10 @@ mod tests {
             vec![adapter.clone()],
             ConfirmationConfig::for_testing(),
         );
-        
+
         let confirmation = create_test_confirmation();
-        let preferences = NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
+        let preferences =
+            NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
 
         let status = service.send_confirmation(&confirmation, &preferences).await;
         assert!(status.is_all_failed());
@@ -433,19 +436,20 @@ mod tests {
     async fn send_confirmation_multi_channel_all_success() {
         let email_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::Email, false));
         let ws_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::WebSocket, false));
-        
+
         let service = MultiChannelConfirmationService::new(
             vec![email_adapter.clone(), ws_adapter.clone()],
             ConfirmationConfig::for_testing(),
         );
-        
+
         let confirmation = create_test_confirmation();
         let preferences = NotificationPreferences::new(
             vec![ConfirmationChannel::Email, ConfirmationChannel::WebSocket],
             Some("test@example.com".to_string()),
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         let status = service.send_confirmation(&confirmation, &preferences).await;
         assert!(status.is_all_sent());
@@ -457,19 +461,20 @@ mod tests {
     async fn send_confirmation_multi_channel_partial_success() {
         let email_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::Email, false));
         let ws_adapter = Arc::new(MockAdapter::new(ConfirmationChannel::WebSocket, true));
-        
+
         let service = MultiChannelConfirmationService::new(
             vec![email_adapter.clone(), ws_adapter.clone()],
             ConfirmationConfig::for_testing(),
         );
-        
+
         let confirmation = create_test_confirmation();
         let preferences = NotificationPreferences::new(
             vec![ConfirmationChannel::Email, ConfirmationChannel::WebSocket],
             Some("test@example.com".to_string()),
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
         let status = service.send_confirmation(&confirmation, &preferences).await;
         assert!(status.is_partial_success());
@@ -486,10 +491,11 @@ mod tests {
             Duration::from_millis(100),
             Duration::from_secs(1),
         );
-        
+
         let service = MultiChannelConfirmationService::new(vec![adapter.clone()], config);
         let confirmation = create_test_confirmation();
-        let preferences = NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
+        let preferences =
+            NotificationPreferences::email_only("test@example.com".to_string()).unwrap();
 
         let status = service.send_confirmation(&confirmation, &preferences).await;
         assert!(status.is_all_failed());

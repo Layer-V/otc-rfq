@@ -110,7 +110,8 @@ pub struct ExecuteTradeUseCase {
     event_publisher: Arc<dyn TradeEventPublisher>,
     venue_registry: Arc<dyn VenueRegistry>,
     confirmation_service: Option<Arc<dyn crate::domain::services::ConfirmationService>>,
-    counterparty_repository: Option<Arc<dyn crate::infrastructure::persistence::traits::CounterpartyRepository>>,
+    counterparty_repository:
+        Option<Arc<dyn crate::infrastructure::persistence::traits::CounterpartyRepository>>,
 }
 
 impl ExecuteTradeUseCase {
@@ -137,7 +138,9 @@ impl ExecuteTradeUseCase {
     pub fn with_confirmation_service(
         mut self,
         confirmation_service: Arc<dyn crate::domain::services::ConfirmationService>,
-        counterparty_repository: Arc<dyn crate::infrastructure::persistence::traits::CounterpartyRepository>,
+        counterparty_repository: Arc<
+            dyn crate::infrastructure::persistence::traits::CounterpartyRepository,
+        >,
     ) -> Self {
         self.confirmation_service = Some(confirmation_service);
         self.counterparty_repository = Some(counterparty_repository);
@@ -235,19 +238,22 @@ impl ExecuteTradeUseCase {
             trade.quantity(),
             execution_result.settlement_method(),
         );
-        self.event_publisher.publish_trade_executed(event.clone()).await?;
+        self.event_publisher
+            .publish_trade_executed(event.clone())
+            .await?;
 
         // Send multi-channel trade confirmations (non-blocking)
-        if let (Some(confirmation_service), Some(counterparty_repo)) = 
-            (&self.confirmation_service, &self.counterparty_repository) 
+        if let (Some(confirmation_service), Some(counterparty_repo)) =
+            (&self.confirmation_service, &self.counterparty_repository)
         {
             self.send_trade_confirmations(
                 &trade,
                 &event,
                 rfq.client_id(),
-                confirmation_service.clone(),
-                counterparty_repo.clone(),
-            ).await;
+                Arc::clone(confirmation_service),
+                Arc::clone(counterparty_repo),
+            )
+            .await;
         }
 
         let execution_time_ms = start.elapsed().as_millis() as u64;
@@ -291,10 +297,12 @@ impl ExecuteTradeUseCase {
         event: &TradeExecuted,
         counterparty_id: &crate::domain::value_objects::CounterpartyId,
         confirmation_service: Arc<dyn crate::domain::services::ConfirmationService>,
-        counterparty_repo: Arc<dyn crate::infrastructure::persistence::traits::CounterpartyRepository>,
+        counterparty_repo: Arc<
+            dyn crate::infrastructure::persistence::traits::CounterpartyRepository,
+        >,
     ) {
         use crate::domain::value_objects::TradeConfirmation;
-        
+
         // Load counterparty to get notification preferences
         let counterparty = match counterparty_repo.get(counterparty_id).await {
             Ok(Some(cp)) => cp,
@@ -337,7 +345,7 @@ impl ExecuteTradeUseCase {
             let status = confirmation_service
                 .send_confirmation(&confirmation, &preferences)
                 .await;
-            
+
             tracing::info!(
                 trade_id = %confirmation.trade_id(),
                 status = %status,
