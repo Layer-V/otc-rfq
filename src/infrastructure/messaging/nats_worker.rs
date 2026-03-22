@@ -200,17 +200,16 @@ mod tests {
     async fn test_write_to_dlq() {
         let subject = "test.dlq.subject";
         let payload = r#"{"test":"dlq_payload"}"#;
-        
+
         // Ensure file does not exist or clean up first (optional, but good for isolation)
         let _ = tokio::fs::remove_file("nats_dlq.txt").await;
-        
+
         let result = NatsPublisherWorker::write_to_dlq(subject, payload).await;
         assert!(result.is_ok());
 
         let contents = tokio::fs::read_to_string("nats_dlq.txt").await.unwrap();
         assert!(contents.contains(&format!("[{}] {}\n", subject, payload)));
-        
+
         let _ = tokio::fs::remove_file("nats_dlq.txt").await;
     }
 }
-
