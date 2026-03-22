@@ -112,7 +112,6 @@ impl NatsPublisherWorker {
     }
 
     /// Publishes an event to JetStream with exponential backoff retry.
-    /// Publishes an event to JetStream with exponential backoff retry.
     async fn publish_with_retry(&self, subject: &str, payload: &str) {
         let max_retries = 5;
         let mut retry_count = 0;
@@ -120,17 +119,19 @@ impl NatsPublisherWorker {
         let payload_bytes = bytes::Bytes::from(payload.to_string());
 
         let mut headers = async_nats::HeaderMap::new();
+        if let Some(event_type) = subject.split('.').next_back() {
+            headers.insert("event_type", event_type);
+        }
+
         #[allow(clippy::collapsible_if)]
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) {
             if let Some(metadata) = json.get("metadata") {
-                if let Some(e_type) = metadata.get("event_type").and_then(|v| v.as_str()) {
-                    headers.insert("event_type", e_type);
-                }
-                if let Some(v) = metadata.get("version").and_then(|v| v.as_u64()) {
-                    headers.insert("version", v.to_string().as_str());
-                }
-                if let Some(ts) = metadata.get("timestamp").and_then(|v| v.as_u64()) {
-                    headers.insert("timestamp", ts.to_string().as_str());
+                if let Some(ts) = metadata.get("timestamp") {
+                    if let Some(ts_str) = ts.as_str() {
+                        headers.insert("timestamp", ts_str);
+                    } else if let Some(ts_u64) = ts.as_u64() {
+                        headers.insert("timestamp", ts_u64.to_string().as_str());
+                    }
                 }
                 if let Some(e_id) = metadata.get("event_id").and_then(|v| v.as_str()) {
                     headers.insert("correlation_id", e_id);
@@ -180,10 +181,12 @@ impl NatsPublisherWorker {
 
     async fn write_to_dlq(subject: &str, payload: &str) -> std::io::Result<()> {
         use tokio::io::AsyncWriteExt;
+        let dlq_path =
+            std::env::var("NATS_DLQ_PATH").unwrap_or_else(|_| "nats_dlq.txt".to_string());
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("nats_dlq.txt")
+            .open(&dlq_path)
             .await?;
         let entry = format!("[{}] {}\n", subject, payload);
         file.write_all(entry.as_bytes()).await?;
