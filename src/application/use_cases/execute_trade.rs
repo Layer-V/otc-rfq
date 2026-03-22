@@ -249,7 +249,7 @@ impl ExecuteTradeUseCase {
             self.send_trade_confirmations(
                 &trade,
                 &event,
-                rfq.client_id(),
+                &rfq,
                 Arc::clone(confirmation_service),
                 Arc::clone(counterparty_repo),
             )
@@ -295,13 +295,15 @@ impl ExecuteTradeUseCase {
         &self,
         trade: &Trade,
         event: &TradeExecuted,
-        counterparty_id: &crate::domain::value_objects::CounterpartyId,
+        rfq: &Rfq,
         confirmation_service: Arc<dyn crate::domain::services::ConfirmationService>,
         counterparty_repo: Arc<
             dyn crate::infrastructure::persistence::traits::CounterpartyRepository,
         >,
     ) {
-        use crate::domain::value_objects::TradeConfirmation;
+        use crate::domain::value_objects::{OrderSide, TradeConfirmation};
+
+        let counterparty_id = rfq.client_id();
 
         // Load counterparty to get notification preferences
         let counterparty = match counterparty_repo.get(counterparty_id).await {
@@ -325,6 +327,18 @@ impl ExecuteTradeUseCase {
             }
         };
 
+        // Determine buyer and seller based on RFQ side
+        // Note: In the current implementation, we use the client as both buyer and seller
+        // because the venue is not modeled as a CounterpartyId. In a production system,
+        // we would need to:
+        // 1. Model venues as counterparties, OR
+        // 2. Track the actual counterparty on the other side of the trade, OR
+        // 3. Extend TradeConfirmation to support VenueId as a separate concept
+        let (buyer_id, seller_id) = match rfq.side() {
+            OrderSide::Buy => (counterparty_id.clone(), counterparty_id.clone()),
+            OrderSide::Sell => (counterparty_id.clone(), counterparty_id.clone()),
+        };
+
         // Build trade confirmation
         let confirmation = TradeConfirmation::new(
             trade.id(),
@@ -335,8 +349,8 @@ impl ExecuteTradeUseCase {
             event.maker_fee.unwrap_or_default(),
             event.net_fee.unwrap_or_default(),
             event.settlement_method,
-            counterparty_id.clone(),
-            counterparty_id.clone(), // In a real system, we'd get the other party
+            buyer_id,
+            seller_id,
         );
 
         // Send confirmation (async, non-blocking)
