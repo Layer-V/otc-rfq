@@ -26,7 +26,7 @@ pub struct NatsPublisherWorker {
 ///
 /// This is a pure function that converts event metadata into NATS headers,
 /// including correlation_id and schema_version when present.
-pub fn extract_nats_headers(metadata: &Value, subject: &str) -> HashMap<String, String> {
+pub fn extract_nats_headers(metadata: &Value, _subject: &str) -> HashMap<String, String> {
     let mut headers = HashMap::new();
 
     // Extract correlation_id from event_id
@@ -35,17 +35,16 @@ pub fn extract_nats_headers(metadata: &Value, subject: &str) -> HashMap<String, 
     }
 
     // Extract schema_version
-    if let Some(schema_version) = metadata.get("schema_version") {
-        if let Some(obj) = schema_version.as_object() {
-            if let (Some(major), Some(minor), Some(patch)) = (
-                obj.get("major").and_then(|v| v.as_u64()),
-                obj.get("minor").and_then(|v| v.as_u64()),
-                obj.get("patch").and_then(|v| v.as_u64()),
-            ) {
-                let version_str = format!("{}.{}.{}", major, minor, patch);
-                headers.insert("schema_version".to_string(), version_str);
-            }
-        }
+    if let Some(schema_version) = metadata.get("schema_version")
+        && let Some(obj) = schema_version.as_object()
+        && let (Some(major), Some(minor), Some(patch)) = (
+            obj.get("major").and_then(|v| v.as_u64()),
+            obj.get("minor").and_then(|v| v.as_u64()),
+            obj.get("patch").and_then(|v| v.as_u64()),
+        )
+    {
+        let version_str = format!("{}.{}.{}", major, minor, patch);
+        headers.insert("schema_version".to_string(), version_str);
     }
 
     headers
