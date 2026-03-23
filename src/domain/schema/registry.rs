@@ -62,15 +62,16 @@ impl EventSchemaRegistry {
     ) -> DomainResult<()> {
         let key = (event_type.clone(), version);
 
-        if self.schemas.contains_key(&key) {
-            return Err(DomainError::SchemaAlreadyRegistered {
+        match self.schemas.entry(key) {
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(schema_json);
+                Ok(())
+            }
+            dashmap::mapref::entry::Entry::Occupied(_) => Err(DomainError::SchemaAlreadyRegistered {
                 event_type,
                 version: version.as_string(),
-            });
+            }),
         }
-
-        self.schemas.insert(key, schema_json);
-        Ok(())
     }
 
     /// Gets schema for a specific event type and version.
