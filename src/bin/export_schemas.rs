@@ -203,7 +203,7 @@ fn main() -> anyhow::Result<()> {
     fs::write(&output_path, json_string)?;
 
     println!("✅ Event schemas exported to: {}", output_path.display());
-    
+
     let event_count = event_schemas
         .get("events")
         .and_then(|e| e.as_object())
