@@ -429,11 +429,7 @@ impl fmt::Display for DomainError {
                 event_type,
                 version,
             } => {
-                write!(
-                    f,
-                    "schema already registered: {} v{}",
-                    event_type, version
-                )
+                write!(f, "schema already registered: {} v{}", event_type, version)
             }
             Self::SchemaGenerationFailed { reason } => {
                 write!(f, "schema generation failed: {}", reason)

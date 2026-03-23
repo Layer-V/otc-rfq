@@ -203,7 +203,12 @@ fn main() -> anyhow::Result<()> {
     fs::write(&output_path, json_string)?;
 
     println!("✅ Event schemas exported to: {}", output_path.display());
-    println!("📊 Total events: {}", event_schemas["events"].as_object().map_or(0, |o| o.len()));
+    
+    let event_count = event_schemas
+        .get("events")
+        .and_then(|e| e.as_object())
+        .map_or(0, |o| o.len());
+    println!("📊 Total events: {}", event_count);
 
     Ok(())
 }

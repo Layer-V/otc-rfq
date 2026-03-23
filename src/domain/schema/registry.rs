@@ -212,7 +212,11 @@ mod tests {
         let schema_json = r#"{"type": "object"}"#.to_string();
 
         registry
-            .register("RfqCreated".to_string(), SchemaVersion::V1_0_0, schema_json.clone())
+            .register(
+                "RfqCreated".to_string(),
+                SchemaVersion::V1_0_0,
+                schema_json.clone(),
+            )
             .unwrap();
 
         let retrieved = registry.get("RfqCreated", &SchemaVersion::V1_0_0).unwrap();
@@ -256,9 +260,9 @@ mod tests {
 
         let versions = registry.list_versions("RfqCreated");
         assert_eq!(versions.len(), 3);
-        assert_eq!(versions[0], SchemaVersion::new(1, 0, 0));
-        assert_eq!(versions[1], SchemaVersion::new(1, 1, 0));
-        assert_eq!(versions[2], SchemaVersion::new(2, 0, 0));
+        assert_eq!(versions.first(), Some(&SchemaVersion::new(1, 0, 0)));
+        assert_eq!(versions.get(1), Some(&SchemaVersion::new(1, 1, 0)));
+        assert_eq!(versions.get(2), Some(&SchemaVersion::new(2, 0, 0)));
     }
 
     #[test]
