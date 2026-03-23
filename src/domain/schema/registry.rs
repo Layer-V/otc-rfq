@@ -5,6 +5,7 @@
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::schema::SchemaVersion;
 use dashmap::DashMap;
+use std::sync::Arc;
 
 /// Registry for event schemas (documentation purposes only).
 ///
@@ -13,9 +14,9 @@ use dashmap::DashMap;
 ///
 /// # Thread Safety
 ///
-/// Uses `DashMap` for lock-free concurrent access.
+/// Uses `DashMap` to provide thread-safe concurrent access.
 pub struct EventSchemaRegistry {
-    schemas: DashMap<(String, SchemaVersion), String>,
+    schemas: DashMap<(Arc<str>, SchemaVersion), String>,
 }
 
 impl EventSchemaRegistry {
@@ -60,7 +61,7 @@ impl EventSchemaRegistry {
         version: SchemaVersion,
         schema_json: String,
     ) -> DomainResult<()> {
-        let key = (event_type.clone(), version);
+        let key = (Arc::from(event_type.as_str()), version);
 
         match self.schemas.entry(key) {
             dashmap::mapref::entry::Entry::Vacant(entry) => {
@@ -96,7 +97,7 @@ impl EventSchemaRegistry {
     /// assert!(schema.is_ok());
     /// ```
     pub fn get(&self, event_type: &str, version: &SchemaVersion) -> DomainResult<String> {
-        let key = (event_type.to_string(), *version);
+        let key = (Arc::from(event_type), *version);
 
         self.schemas
             .get(&key)
@@ -128,12 +129,13 @@ impl EventSchemaRegistry {
     /// ```
     #[must_use]
     pub fn list_versions(&self, event_type: &str) -> Vec<SchemaVersion> {
+        let event_type_arc = Arc::from(event_type);
         let mut versions: Vec<SchemaVersion> = self
             .schemas
             .iter()
             .filter_map(|entry| {
                 let (key, _) = entry.pair();
-                if key.0 == event_type {
+                if key.0 == event_type_arc {
                     Some(key.1)
                 } else {
                     None
