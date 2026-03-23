@@ -140,6 +140,18 @@ impl NatsPublisherWorker {
                 if let Some(e_id) = metadata.get("event_id").and_then(|v| v.as_str()) {
                     headers.insert("correlation_id", e_id);
                 }
+                if let Some(schema_version) = metadata.get("schema_version") {
+                    if let Some(obj) = schema_version.as_object() {
+                        if let (Some(major), Some(minor), Some(patch)) = (
+                            obj.get("major").and_then(|v| v.as_u64()),
+                            obj.get("minor").and_then(|v| v.as_u64()),
+                            obj.get("patch").and_then(|v| v.as_u64()),
+                        ) {
+                            let version_str = format!("{}.{}.{}", major, minor, patch);
+                            headers.insert("schema_version", version_str.as_str());
+                        }
+                    }
+                }
             }
         }
 
