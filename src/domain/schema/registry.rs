@@ -68,10 +68,12 @@ impl EventSchemaRegistry {
                 entry.insert(schema_json);
                 Ok(())
             }
-            dashmap::mapref::entry::Entry::Occupied(_) => Err(DomainError::SchemaAlreadyRegistered {
-                event_type,
-                version: version.as_string(),
-            }),
+            dashmap::mapref::entry::Entry::Occupied(_) => {
+                Err(DomainError::SchemaAlreadyRegistered {
+                    event_type,
+                    version: version.as_string(),
+                })
+            }
         }
     }
 

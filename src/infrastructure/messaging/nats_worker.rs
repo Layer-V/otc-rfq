@@ -162,7 +162,10 @@ impl NatsPublisherWorker {
                         );
                     }
                 } else {
-                    debug!("No schema_version found in metadata for subject {}", subject);
+                    debug!(
+                        "No schema_version found in metadata for subject {}",
+                        subject
+                    );
                 }
             }
         }
