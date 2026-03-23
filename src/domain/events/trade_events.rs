@@ -455,6 +455,8 @@ pub struct PositionUpdated {
     pub mm_side: OrderSide,
     /// Instrument for Greeks recalculation.
     pub instrument: Instrument,
+    /// Asset class for efficient Greeks calculation.
+    pub asset_class: crate::domain::value_objects::enums::AssetClass,
     /// Trade details for position calculation.
     pub quantity: Quantity,
     /// Execution price.
@@ -476,6 +478,7 @@ impl PositionUpdated {
         quantity: Quantity,
         price: Price,
     ) -> Self {
+        let asset_class = instrument.asset_class();
         Self {
             metadata: EventMetadata::for_rfq(rfq_id),
             trade_id,
@@ -484,6 +487,7 @@ impl PositionUpdated {
             mm_id,
             mm_side,
             instrument,
+            asset_class,
             quantity,
             price,
         }
