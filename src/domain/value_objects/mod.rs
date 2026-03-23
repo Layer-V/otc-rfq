@@ -4,7 +4,7 @@
 //!
 //! ## Identity Types
 //!
-//! - [`RfqId`], [`QuoteId`], [`TradeId`]: UUID-based identifiers
+//! - [`RfqId`], [`QuoteId`], [`TradeId`], [`BlockTradeId`]: UUID-based identifiers
 //! - [`VenueId`], [`CounterpartyId`]: String-based identifiers
 //! - [`EventId`]: Domain event identifier
 //!

@@ -11,6 +11,7 @@
 //! - [`QuoteId`] - Quote identifier
 //! - [`TradeId`] - Trade identifier
 //! - [`EventId`] - Domain event identifier
+//! - [`BlockTradeId`] - Block Trade identifier
 //!
 //! ## String-based Identifiers
 //!
