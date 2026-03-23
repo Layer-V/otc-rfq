@@ -4,6 +4,15 @@
 //!
 //! This tool generates a JSON file listing all event types with their
 //! current schema versions. Useful for documentation and consumer reference.
+//!
+//! # TODO: Future Automation
+//!
+//! Currently, event types and versions are manually defined in a JSON literal.
+//! This creates a maintenance burden where developers must remember to update
+//! this file when adding new events. Future improvements should consider:
+//! - Macro-based registration of events at compile time
+//! - Trait-based collector that discovers events automatically
+//! - Code generation from event definitions
 
 use clap::Parser;
 use std::fs;
