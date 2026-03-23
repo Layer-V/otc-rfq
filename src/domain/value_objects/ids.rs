@@ -11,6 +11,7 @@
 //! - [`QuoteId`] - Quote identifier
 //! - [`TradeId`] - Trade identifier
 //! - [`EventId`] - Domain event identifier
+//! - [`BlockTradeId`] - Block Trade identifier
 //!
 //! ## String-based Identifiers
 //!
@@ -134,6 +135,71 @@ impl fmt::Display for QuoteId {
 }
 
 impl From<Uuid> for QuoteId {
+    #[inline]
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+/// Block Trade identifier.
+///
+/// A UUID-based identifier uniquely identifying a bilateral block trade.
+///
+/// # Examples
+///
+/// ```
+/// use otc_rfq::domain::value_objects::ids::BlockTradeId;
+///
+/// let block_trade_id = BlockTradeId::new_v4();
+/// println!("Block Trade: {}", block_trade_id);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BlockTradeId(Uuid);
+
+impl BlockTradeId {
+    /// Creates a new Block Trade ID from an existing UUID.
+    #[inline]
+    #[must_use]
+    pub const fn new(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Generates a new random Block Trade ID using UUID v4.
+    #[must_use]
+    pub fn new_v4() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Returns the inner UUID value.
+    #[inline]
+    #[must_use]
+    pub const fn get(self) -> Uuid {
+        self.0
+    }
+
+    /// Creates a Block Trade ID from a UUID reference.
+    #[inline]
+    #[must_use]
+    pub const fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+}
+
+impl Default for BlockTradeId {
+    #[inline]
+    fn default() -> Self {
+        Self::new_v4()
+    }
+}
+
+impl fmt::Display for BlockTradeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.hyphenated())
+    }
+}
+
+impl From<Uuid> for BlockTradeId {
     #[inline]
     fn from(uuid: Uuid) -> Self {
         Self(uuid)
@@ -604,6 +670,42 @@ mod tests {
             let json = serde_json::to_string(&trade_id).unwrap();
             let deserialized: TradeId = serde_json::from_str(&json).unwrap();
             assert_eq!(trade_id, deserialized);
+        }
+    }
+
+    mod block_trade_id {
+        use super::*;
+
+        #[test]
+        fn new_v4_generates_unique_ids() {
+            let id1 = BlockTradeId::new_v4();
+            let id2 = BlockTradeId::new_v4();
+            assert_ne!(id1, id2);
+        }
+
+        #[test]
+        fn from_uuid_roundtrip() {
+            let uuid = Uuid::new_v4();
+            let block_trade_id = BlockTradeId::new(uuid);
+            assert_eq!(block_trade_id.get(), uuid);
+        }
+
+        #[test]
+        fn display_formats_as_hyphenated() {
+            let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+            let block_trade_id = BlockTradeId::new(uuid);
+            assert_eq!(
+                block_trade_id.to_string(),
+                "550e8400-e29b-41d4-a716-446655440000"
+            );
+        }
+
+        #[test]
+        fn serde_roundtrip() {
+            let block_trade_id = BlockTradeId::new_v4();
+            let json = serde_json::to_string(&block_trade_id).unwrap();
+            let deserialized: BlockTradeId = serde_json::from_str(&json).unwrap();
+            assert_eq!(block_trade_id, deserialized);
         }
     }
 

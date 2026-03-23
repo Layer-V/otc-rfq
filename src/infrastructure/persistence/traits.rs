@@ -28,7 +28,7 @@ use crate::domain::entities::anonymity::IdentityMapping;
 use crate::domain::entities::counterparty::Counterparty;
 use crate::domain::entities::rfq::Rfq;
 use crate::domain::entities::trade::Trade;
-use crate::domain::value_objects::{CounterpartyId, RfqId, TradeId, VenueId};
+use crate::domain::value_objects::{BlockTradeId, CounterpartyId, RfqId, TradeId, VenueId};
 use crate::infrastructure::venues::registry::VenueConfig;
 use async_trait::async_trait;
 use std::fmt;
@@ -440,7 +440,7 @@ pub trait DelayedReportRepository: Send + Sync + fmt::Debug {
     /// Returns `None` if no report exists for the trade.
     async fn find_by_trade_id(
         &self,
-        trade_id: &str,
+        trade_id: BlockTradeId,
     ) -> RepositoryResult<Option<crate::domain::entities::delayed_report::DelayedReport>>;
 
     /// Finds all pending (unpublished) reports.

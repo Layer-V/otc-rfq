@@ -4,7 +4,7 @@
 //!
 //! ## Identity Types
 //!
-//! - [`RfqId`], [`QuoteId`], [`TradeId`]: UUID-based identifiers
+//! - [`RfqId`], [`QuoteId`], [`TradeId`], [`BlockTradeId`]: UUID-based identifiers
 //! - [`VenueId`], [`CounterpartyId`]: String-based identifiers
 //! - [`EventId`]: Domain event identifier
 //!
@@ -73,7 +73,8 @@ pub use confirmation::{
 };
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
 pub use ids::{
-    CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId, VenueId,
+    BlockTradeId, CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId,
+    VenueId,
 };
 pub use instrument::{Instrument, InstrumentBuilder};
 pub use liquidity_classification::LiquidityClassification;

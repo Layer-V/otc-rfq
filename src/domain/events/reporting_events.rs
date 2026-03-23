@@ -5,7 +5,7 @@
 use crate::domain::entities::delayed_report::TradeSummary;
 use crate::domain::events::domain_event::{DomainEvent, EventMetadata, EventType};
 use crate::domain::services::ReportingTier;
-use crate::domain::value_objects::{EventId, RfqId, Timestamp};
+use crate::domain::value_objects::{BlockTradeId, EventId, RfqId, Timestamp};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ pub struct BlockTradeReported {
     /// Report ID.
     report_id: Uuid,
     /// Associated trade ID.
-    trade_id: String,
+    trade_id: BlockTradeId,
     /// Reporting tier that determined the delay.
     reporting_tier: ReportingTier,
     /// Trade summary (no counterparty info).
@@ -36,7 +36,7 @@ impl BlockTradeReported {
     #[must_use]
     pub fn new(
         report_id: Uuid,
-        trade_id: String,
+        trade_id: BlockTradeId,
         reporting_tier: ReportingTier,
         trade_summary: TradeSummary,
         scheduled_at: Timestamp,
@@ -61,8 +61,8 @@ impl BlockTradeReported {
 
     /// Returns the trade ID.
     #[must_use]
-    pub fn trade_id(&self) -> &str {
-        &self.trade_id
+    pub fn trade_id(&self) -> BlockTradeId {
+        self.trade_id
     }
 
     /// Returns the reporting tier.
@@ -127,7 +127,7 @@ pub struct ReportScheduled {
     /// Report ID.
     report_id: Uuid,
     /// Associated trade ID.
-    trade_id: String,
+    trade_id: BlockTradeId,
     /// Reporting tier.
     reporting_tier: ReportingTier,
     /// Scheduled publication time.
@@ -139,7 +139,7 @@ impl ReportScheduled {
     #[must_use]
     pub fn new(
         report_id: Uuid,
-        trade_id: String,
+        trade_id: BlockTradeId,
         reporting_tier: ReportingTier,
         publish_at: Timestamp,
     ) -> Self {
@@ -160,8 +160,8 @@ impl ReportScheduled {
 
     /// Returns the trade ID.
     #[must_use]
-    pub fn trade_id(&self) -> &str {
-        &self.trade_id
+    pub fn trade_id(&self) -> BlockTradeId {
+        self.trade_id
     }
 
     /// Returns the reporting tier.
@@ -222,17 +222,18 @@ mod tests {
         let summary = create_test_summary();
         let scheduled_at = Timestamp::now().add_secs(-900);
         let published_at = Timestamp::now();
+        let expected_id = BlockTradeId::new_v4();
 
         let event = BlockTradeReported::new(
             Uuid::new_v4(),
-            "trade-123".to_string(),
+            expected_id,
             ReportingTier::Standard,
             summary,
             scheduled_at,
             published_at,
         );
 
-        assert_eq!(event.trade_id(), "trade-123");
+        assert_eq!(event.trade_id(), expected_id);
         assert_eq!(event.reporting_tier(), ReportingTier::Standard);
         assert_eq!(event.event_type(), EventType::Trade);
         assert_eq!(event.event_name(), "BlockTradeReported");
@@ -241,14 +242,15 @@ mod tests {
     #[test]
     fn report_scheduled_creation() {
         let publish_at = Timestamp::now().add_secs(900);
+        let expected_id = BlockTradeId::new_v4();
         let event = ReportScheduled::new(
             Uuid::new_v4(),
-            "trade-123".to_string(),
+            expected_id,
             ReportingTier::Standard,
             publish_at,
         );
 
-        assert_eq!(event.trade_id(), "trade-123");
+        assert_eq!(event.trade_id(), expected_id);
         assert_eq!(event.event_type(), EventType::Trade);
         assert_eq!(event.event_name(), "ReportScheduled");
     }
@@ -261,7 +263,7 @@ mod tests {
 
         let event = BlockTradeReported::new(
             Uuid::new_v4(),
-            "trade-123".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             scheduled_at,

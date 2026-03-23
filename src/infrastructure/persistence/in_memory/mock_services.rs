@@ -491,11 +491,7 @@ impl ReportScheduler for MockReportScheduler {
         let publish_at = crate::domain::value_objects::Timestamp::now()
             .add_secs(delay.as_secs().try_into().unwrap_or(i64::MAX));
 
-        Ok(ScheduledReport::new(
-            trade.id().to_string(),
-            tier,
-            publish_at,
-        ))
+        Ok(ScheduledReport::new(trade.id(), tier, publish_at))
     }
 
     fn delay_for_tier(&self, tier: ReportingTier) -> Duration {

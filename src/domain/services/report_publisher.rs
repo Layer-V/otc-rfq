@@ -110,7 +110,7 @@ impl<R: DelayedReportRepository> ReportPublisher<R> {
             Timestamp::now(),
         );
 
-        let report = DelayedReport::new(trade.id().to_string(), tier, summary, publish_at);
+        let report = DelayedReport::new(trade.id(), tier, summary, publish_at);
 
         self.repository.save(&report).await.map_err(|e| {
             crate::domain::errors::DomainError::ValidationError(format!(
@@ -119,7 +119,7 @@ impl<R: DelayedReportRepository> ReportPublisher<R> {
             ))
         })?;
 
-        let event = ReportScheduled::new(report.id(), trade.id().to_string(), tier, publish_at);
+        let event = ReportScheduled::new(report.id(), trade.id(), tier, publish_at);
 
         info!(
             trade_id = %trade.id(),
@@ -226,7 +226,7 @@ impl<R: DelayedReportRepository> ReportPublisher<R> {
         // Create the event
         let event = BlockTradeReported::new(
             report.id(),
-            report.trade_id().to_string(),
+            report.trade_id(),
             report.reporting_tier(),
             report.trade_summary().clone(),
             report.created_at(),
@@ -323,7 +323,7 @@ impl<R: DelayedReportRepository> ReportPublisher<R> {
 mod tests {
     use super::*;
     use crate::domain::value_objects::enums::{AssetClass, SettlementMethod};
-    use crate::domain::value_objects::{Instrument, Price, Quantity, Symbol};
+    use crate::domain::value_objects::{BlockTradeId, Instrument, Price, Quantity, Symbol};
     use crate::infrastructure::persistence::in_memory::delayed_report_repository::InMemoryDelayedReportRepository;
 
     #[tokio::test]
@@ -343,7 +343,7 @@ mod tests {
             Timestamp::now(),
         );
         let report = DelayedReport::new(
-            "trade-1".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             Timestamp::now().add_secs(-60), // 1 minute ago
@@ -355,7 +355,7 @@ mod tests {
 
         assert_eq!(result.published_count, 1);
         assert_eq!(result.events.len(), 1);
-        assert_eq!(result.events[0].trade_id(), "trade-1");
+        assert_eq!(result.events[0].trade_id(), report.trade_id());
 
         // Verify marked as published
         let updated = repo.find_by_id(&report.id()).await.unwrap().unwrap();
@@ -379,7 +379,7 @@ mod tests {
             Timestamp::now(),
         );
         let report = DelayedReport::new(
-            "trade-1".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             Timestamp::now().add_secs(900), // 15 minutes from now
