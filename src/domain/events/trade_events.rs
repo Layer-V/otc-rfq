@@ -518,6 +518,8 @@ impl DomainEvent for PositionUpdated {
 pub enum TradeEvent {
     /// Trade was executed.
     Executed(TradeExecuted),
+    /// Position was updated.
+    PositionUpdated(PositionUpdated),
     /// Settlement was initiated.
     SettlementInitiated(SettlementInitiated),
     /// Settlement was confirmed.
@@ -530,6 +532,7 @@ impl DomainEvent for TradeEvent {
     fn event_id(&self) -> EventId {
         match self {
             Self::Executed(e) => e.event_id(),
+            Self::PositionUpdated(e) => e.event_id(),
             Self::SettlementInitiated(e) => e.event_id(),
             Self::SettlementConfirmed(e) => e.event_id(),
             Self::SettlementFailed(e) => e.event_id(),
@@ -539,6 +542,7 @@ impl DomainEvent for TradeEvent {
     fn rfq_id(&self) -> Option<RfqId> {
         match self {
             Self::Executed(e) => e.rfq_id(),
+            Self::PositionUpdated(e) => e.rfq_id(),
             Self::SettlementInitiated(e) => e.rfq_id(),
             Self::SettlementConfirmed(e) => e.rfq_id(),
             Self::SettlementFailed(e) => e.rfq_id(),
@@ -548,6 +552,7 @@ impl DomainEvent for TradeEvent {
     fn timestamp(&self) -> Timestamp {
         match self {
             Self::Executed(e) => e.timestamp(),
+            Self::PositionUpdated(e) => e.timestamp(),
             Self::SettlementInitiated(e) => e.timestamp(),
             Self::SettlementConfirmed(e) => e.timestamp(),
             Self::SettlementFailed(e) => e.timestamp(),
@@ -557,6 +562,7 @@ impl DomainEvent for TradeEvent {
     fn event_type(&self) -> EventType {
         match self {
             Self::Executed(e) => e.event_type(),
+            Self::PositionUpdated(e) => e.event_type(),
             Self::SettlementInitiated(e) => e.event_type(),
             Self::SettlementConfirmed(e) => e.event_type(),
             Self::SettlementFailed(e) => e.event_type(),
@@ -566,6 +572,7 @@ impl DomainEvent for TradeEvent {
     fn event_name(&self) -> &'static str {
         match self {
             Self::Executed(e) => e.event_name(),
+            Self::PositionUpdated(e) => e.event_name(),
             Self::SettlementInitiated(e) => e.event_name(),
             Self::SettlementConfirmed(e) => e.event_name(),
             Self::SettlementFailed(e) => e.event_name(),
@@ -771,6 +778,8 @@ mod tests {
 
     mod trade_event_enum {
         use super::*;
+        use crate::domain::value_objects::enums::AssetClass;
+        use crate::domain::value_objects::symbol::Symbol;
 
         #[test]
         fn serde_roundtrip() {
@@ -784,6 +793,30 @@ mod tests {
             let json = serde_json::to_string(&event).unwrap();
             let deserialized: TradeEvent = serde_json::from_str(&json).unwrap();
             assert_eq!(event.event_name(), deserialized.event_name());
+        }
+
+        #[test]
+        fn serde_roundtrip_position_updated() {
+            let event = TradeEvent::PositionUpdated(PositionUpdated::new(
+                test_rfq_id(),
+                test_trade_id(),
+                test_counterparty_id(),
+                OrderSide::Buy,
+                test_venue_id(),
+                OrderSide::Sell,
+                Instrument::new(
+                    Symbol::new("BTC/USD").unwrap(),
+                    AssetClass::CryptoSpot,
+                    SettlementMethod::OffChain,
+                ),
+                Quantity::new(1.0).unwrap(),
+                Price::new(50000.0).unwrap(),
+            ));
+
+            let json = serde_json::to_string(&event).unwrap();
+            let deserialized: TradeEvent = serde_json::from_str(&json).unwrap();
+            assert_eq!(event.event_name(), deserialized.event_name());
+            assert_eq!(event.event_type(), EventType::Trade);
         }
 
         #[test]

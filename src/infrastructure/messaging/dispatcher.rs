@@ -139,15 +139,20 @@ impl TradeEventPublisher for DomainEventDispatcher {
         // Publish to requester position update subject
         let requester_subject = format!(
             "{}.position.{}.updated",
-            self.subject_prefix, event.requester_id
+            self.subject_prefix, &event.requester_id
         );
-        self.dispatch(requester_subject, &event).await.ok();
+        let requester_result = self.dispatch(requester_subject, &event).await;
 
         // Publish to MM position update subject
-        let mm_subject = format!("{}.position.{}.updated", self.subject_prefix, event.mm_id);
-        self.dispatch(mm_subject, &event)
-            .await
-            .map_err(crate::application::error::ApplicationError::EventPublishError)
+        let mm_subject = format!("{}.position.{}.updated", self.subject_prefix, &event.mm_id);
+        let mm_result = self.dispatch(mm_subject, &event).await;
+
+        // If either publish failed, return the first encountered error
+        if let Err(e) = requester_result {
+            return Err(crate::application::error::ApplicationError::EventPublishError(e));
+        }
+
+        mm_result.map_err(crate::application::error::ApplicationError::EventPublishError)
     }
 }
 
