@@ -48,43 +48,9 @@ use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{CounterpartyId, Instrument, Price, Quantity};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use uuid::Uuid;
 
-/// Unique identifier for a block trade.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct BlockTradeId(Uuid);
-
-impl BlockTradeId {
-    /// Creates a new random block trade ID.
-    #[must_use]
-    pub fn new_v4() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    /// Creates a block trade ID from an existing UUID.
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
-    /// Returns the inner UUID.
-    #[must_use]
-    pub const fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-}
-
-impl fmt::Display for BlockTradeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Default for BlockTradeId {
-    fn default() -> Self {
-        Self::new_v4()
-    }
-}
+// Re-export BlockTradeId from value_objects
+pub use crate::domain::value_objects::ids::BlockTradeId;
 
 /// Block trade lifecycle state.
 ///

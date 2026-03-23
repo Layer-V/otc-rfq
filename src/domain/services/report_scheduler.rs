@@ -8,7 +8,7 @@
 use crate::domain::entities::block_trade::BlockTrade;
 use crate::domain::errors::DomainResult;
 use crate::domain::services::ReportingTier;
-use crate::domain::value_objects::timestamp::Timestamp;
+use crate::domain::value_objects::{BlockTradeId, Timestamp};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -17,8 +17,8 @@ use std::time::Duration;
 /// A scheduled report for a block trade.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScheduledReport {
-    /// Block trade ID (stored as string for serialization).
-    block_trade_id: String,
+    /// Block trade ID.
+    block_trade_id: BlockTradeId,
     /// Reporting tier.
     tier: ReportingTier,
     /// When the report should be published.
@@ -30,7 +30,7 @@ pub struct ScheduledReport {
 impl ScheduledReport {
     /// Creates a new scheduled report.
     #[must_use]
-    pub fn new(block_trade_id: String, tier: ReportingTier, publish_at: Timestamp) -> Self {
+    pub fn new(block_trade_id: BlockTradeId, tier: ReportingTier, publish_at: Timestamp) -> Self {
         Self {
             block_trade_id,
             tier,
@@ -41,8 +41,8 @@ impl ScheduledReport {
 
     /// Returns the block trade ID.
     #[must_use]
-    pub fn block_trade_id(&self) -> &str {
-        &self.block_trade_id
+    pub fn block_trade_id(&self) -> BlockTradeId {
+        self.block_trade_id
     }
 
     /// Returns the reporting tier.
@@ -186,10 +186,10 @@ mod tests {
     #[test]
     fn scheduled_report_creation() {
         let publish_at = Timestamp::now().add_secs(900); // 15 min
-        let report =
-            ScheduledReport::new("trade-123".to_string(), ReportingTier::Standard, publish_at);
+        let expected_id = BlockTradeId::new_v4();
+        let report = ScheduledReport::new(expected_id, ReportingTier::Standard, publish_at);
 
-        assert_eq!(report.block_trade_id(), "trade-123");
+        assert_eq!(report.block_trade_id(), expected_id);
         assert_eq!(report.tier(), ReportingTier::Standard);
         assert!(!report.is_published());
     }
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn scheduled_report_mark_published() {
         let mut report = ScheduledReport::new(
-            "trade-123".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             Timestamp::now(),
         );

@@ -4,7 +4,7 @@
 //! and development purposes.
 
 use crate::domain::entities::delayed_report::DelayedReport;
-use crate::domain::value_objects::Timestamp;
+use crate::domain::value_objects::{BlockTradeId, Timestamp};
 use crate::infrastructure::persistence::traits::{
     DelayedReportRepository, RepositoryError, RepositoryResult,
 };
@@ -66,7 +66,10 @@ impl DelayedReportRepository for InMemoryDelayedReportRepository {
         Ok(reports.get(id).cloned())
     }
 
-    async fn find_by_trade_id(&self, trade_id: &str) -> RepositoryResult<Option<DelayedReport>> {
+    async fn find_by_trade_id(
+        &self,
+        trade_id: BlockTradeId,
+    ) -> RepositoryResult<Option<DelayedReport>> {
         let reports = self.reports.read().await;
         Ok(reports.values().find(|r| r.trade_id() == trade_id).cloned())
     }
@@ -123,7 +126,7 @@ mod tests {
     use crate::domain::value_objects::enums::{AssetClass, SettlementMethod};
     use crate::domain::value_objects::{Instrument, Price, Quantity, Symbol};
 
-    fn create_test_report(trade_id: &str, publish_secs_from_now: i64) -> DelayedReport {
+    fn create_test_report(trade_id: BlockTradeId, publish_secs_from_now: i64) -> DelayedReport {
         let symbol = Symbol::new("BTC/USD").unwrap();
         let instrument =
             Instrument::new(symbol, AssetClass::CryptoSpot, SettlementMethod::default());
@@ -134,38 +137,35 @@ mod tests {
             Timestamp::now(),
         );
         let publish_at = Timestamp::now().add_secs(publish_secs_from_now);
-        DelayedReport::new(
-            trade_id.to_string(),
-            ReportingTier::Standard,
-            summary,
-            publish_at,
-        )
+        DelayedReport::new(trade_id, ReportingTier::Standard, summary, publish_at)
     }
 
     #[tokio::test]
     async fn save_and_find_by_id() {
         let repo = InMemoryDelayedReportRepository::new();
-        let report = create_test_report("trade-1", 900);
+        let trade_id = BlockTradeId::new_v4();
+        let report = create_test_report(trade_id, 900);
         let id = report.id();
 
         repo.save(&report).await.unwrap();
 
         let found = repo.find_by_id(&id).await.unwrap();
         assert!(found.is_some());
-        assert_eq!(found.unwrap().trade_id(), "trade-1");
+        assert_eq!(found.unwrap().trade_id(), trade_id);
     }
 
     #[tokio::test]
     async fn find_by_trade_id() {
         let repo = InMemoryDelayedReportRepository::new();
-        let report = create_test_report("trade-1", 900);
+        let trade_id = BlockTradeId::new_v4();
+        let report = create_test_report(trade_id, 900);
 
         repo.save(&report).await.unwrap();
 
-        let found = repo.find_by_trade_id("trade-1").await.unwrap();
+        let found = repo.find_by_trade_id(trade_id).await.unwrap();
         assert!(found.is_some());
 
-        let not_found = repo.find_by_trade_id("trade-999").await.unwrap();
+        let not_found = repo.find_by_trade_id(BlockTradeId::new_v4()).await.unwrap();
         assert!(not_found.is_none());
     }
 
@@ -173,8 +173,9 @@ mod tests {
     async fn find_pending() {
         let repo = InMemoryDelayedReportRepository::new();
 
-        let report1 = create_test_report("trade-1", 900);
-        let mut report2 = create_test_report("trade-2", 900);
+        let trade1_id = BlockTradeId::new_v4();
+        let report1 = create_test_report(trade1_id, 900);
+        let mut report2 = create_test_report(BlockTradeId::new_v4(), 900);
         report2.mark_published();
 
         repo.save(&report1).await.unwrap();
@@ -182,28 +183,29 @@ mod tests {
 
         let pending = repo.find_pending().await.unwrap();
         assert_eq!(pending.len(), 1);
-        assert_eq!(pending[0].trade_id(), "trade-1");
+        assert_eq!(pending[0].trade_id(), trade1_id);
     }
 
     #[tokio::test]
     async fn find_ready_to_publish() {
         let repo = InMemoryDelayedReportRepository::new();
 
-        let report_future = create_test_report("trade-1", 900); // 15 min from now
-        let report_past = create_test_report("trade-2", -60); // 1 min ago
+        let trade2_id = BlockTradeId::new_v4();
+        let report_future = create_test_report(BlockTradeId::new_v4(), 900); // 15 min from now
+        let report_past = create_test_report(trade2_id, -60); // 1 min ago
 
         repo.save(&report_future).await.unwrap();
         repo.save(&report_past).await.unwrap();
 
         let ready = repo.find_ready_to_publish(Timestamp::now()).await.unwrap();
         assert_eq!(ready.len(), 1);
-        assert_eq!(ready[0].trade_id(), "trade-2");
+        assert_eq!(ready[0].trade_id(), trade2_id);
     }
 
     #[tokio::test]
     async fn mark_published() {
         let repo = InMemoryDelayedReportRepository::new();
-        let report = create_test_report("trade-1", -60);
+        let report = create_test_report(BlockTradeId::new_v4(), -60);
         let id = report.id();
 
         repo.save(&report).await.unwrap();
@@ -221,8 +223,8 @@ mod tests {
     async fn count_and_count_pending() {
         let repo = InMemoryDelayedReportRepository::new();
 
-        let report1 = create_test_report("trade-1", 900);
-        let mut report2 = create_test_report("trade-2", 900);
+        let report1 = create_test_report(BlockTradeId::new_v4(), 900);
+        let mut report2 = create_test_report(BlockTradeId::new_v4(), 900);
         report2.mark_published();
 
         repo.save(&report1).await.unwrap();
@@ -235,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn delete() {
         let repo = InMemoryDelayedReportRepository::new();
-        let report = create_test_report("trade-1", 900);
+        let report = create_test_report(BlockTradeId::new_v4(), 900);
         let id = report.id();
 
         repo.save(&report).await.unwrap();

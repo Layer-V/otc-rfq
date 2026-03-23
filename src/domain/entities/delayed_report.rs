@@ -8,7 +8,7 @@
 //! - VeryLarge: End of Day (EOD)
 
 use crate::domain::services::ReportingTier;
-use crate::domain::value_objects::{Instrument, Price, Quantity, Timestamp};
+use crate::domain::value_objects::{BlockTradeId, Instrument, Price, Quantity, Timestamp};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -92,7 +92,7 @@ pub struct DelayedReport {
     /// Unique report identifier.
     id: Uuid,
     /// Associated block trade ID.
-    trade_id: String,
+    trade_id: BlockTradeId,
     /// Reporting tier determining the delay.
     reporting_tier: ReportingTier,
     /// Trade summary for publication.
@@ -109,7 +109,7 @@ impl DelayedReport {
     /// Creates a new delayed report.
     #[must_use]
     pub fn new(
-        trade_id: String,
+        trade_id: BlockTradeId,
         reporting_tier: ReportingTier,
         trade_summary: TradeSummary,
         publish_at: Timestamp,
@@ -129,7 +129,7 @@ impl DelayedReport {
     #[must_use]
     pub fn with_id(
         id: Uuid,
-        trade_id: String,
+        trade_id: BlockTradeId,
         reporting_tier: ReportingTier,
         trade_summary: TradeSummary,
         publish_at: Timestamp,
@@ -155,8 +155,8 @@ impl DelayedReport {
 
     /// Returns the trade ID.
     #[must_use]
-    pub fn trade_id(&self) -> &str {
-        &self.trade_id
+    pub fn trade_id(&self) -> BlockTradeId {
+        self.trade_id
     }
 
     /// Returns the reporting tier.
@@ -278,14 +278,10 @@ mod tests {
     fn delayed_report_creation() {
         let summary = create_test_summary();
         let publish_at = Timestamp::now().add_secs(900); // 15 min
-        let report = DelayedReport::new(
-            "trade-123".to_string(),
-            ReportingTier::Standard,
-            summary,
-            publish_at,
-        );
+        let expected_id = BlockTradeId::new_v4();
+        let report = DelayedReport::new(expected_id, ReportingTier::Standard, summary, publish_at);
 
-        assert_eq!(report.trade_id(), "trade-123");
+        assert_eq!(report.trade_id(), expected_id);
         assert_eq!(report.reporting_tier(), ReportingTier::Standard);
         assert!(!report.is_published());
         assert!(!report.is_ready());
@@ -295,7 +291,7 @@ mod tests {
     fn delayed_report_mark_published() {
         let summary = create_test_summary();
         let mut report = DelayedReport::new(
-            "trade-123".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             Timestamp::now(),
@@ -312,7 +308,7 @@ mod tests {
         let summary = create_test_summary();
         let publish_at = Timestamp::now().add_secs(-1); // 1 second ago
         let report = DelayedReport::new(
-            "trade-123".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             publish_at,
@@ -326,7 +322,7 @@ mod tests {
         let summary = create_test_summary();
         let publish_at = Timestamp::now().add_secs(60); // 60 seconds from now
         let report = DelayedReport::new(
-            "trade-123".to_string(),
+            BlockTradeId::new_v4(),
             ReportingTier::Standard,
             summary,
             publish_at,

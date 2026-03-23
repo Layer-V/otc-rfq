@@ -297,7 +297,7 @@ where
                     .await;
                 // Create a placeholder report
                 ScheduledReport::new(
-                    trade.id().to_string(),
+                    trade.id(),
                     trade
                         .reporting_tier()
                         .unwrap_or(crate::domain::services::ReportingTier::Standard),

@@ -73,7 +73,8 @@ pub use confirmation::{
 };
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
 pub use ids::{
-    CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId, VenueId,
+    BlockTradeId, CounterpartyId, EventId, NegotiationId, PackageQuoteId, QuoteId, RfqId, TradeId,
+    VenueId,
 };
 pub use instrument::{Instrument, InstrumentBuilder};
 pub use liquidity_classification::LiquidityClassification;
