@@ -131,6 +131,24 @@ impl TradeEventPublisher for DomainEventDispatcher {
             .await
             .map_err(crate::application::error::ApplicationError::EventPublishError)
     }
+
+    async fn publish_position_updated(
+        &self,
+        event: crate::domain::events::PositionUpdated,
+    ) -> ApplicationResult<()> {
+        // Publish to requester position update subject
+        let requester_subject = format!(
+            "{}.position.{}.updated",
+            self.subject_prefix, event.requester_id
+        );
+        self.dispatch(requester_subject, &event).await.ok();
+
+        // Publish to MM position update subject
+        let mm_subject = format!("{}.position.{}.updated", self.subject_prefix, event.mm_id);
+        self.dispatch(mm_subject, &event)
+            .await
+            .map_err(crate::application::error::ApplicationError::EventPublishError)
+    }
 }
 
 #[cfg(test)]

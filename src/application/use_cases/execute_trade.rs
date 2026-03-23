@@ -44,6 +44,19 @@ pub trait TradeEventPublisher: Send + Sync + fmt::Debug {
         quote_id: QuoteId,
         reason: &str,
     ) -> ApplicationResult<()>;
+
+    /// Publishes a position updated event.
+    ///
+    /// This event notifies the Position Manager to update positions,
+    /// trigger Greeks recalculation, and compute margin impact.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event cannot be published.
+    async fn publish_position_updated(
+        &self,
+        event: crate::domain::events::PositionUpdated,
+    ) -> ApplicationResult<()>;
 }
 
 /// Request to execute a trade.
@@ -227,7 +240,7 @@ impl ExecuteTradeUseCase {
             .await
             .map_err(ApplicationError::RepositoryError)?;
 
-        // Publish event
+        // Publish trade executed event
         let event = TradeExecuted::builder()
             .rfq_id(rfq.id())
             .trade_id(trade.id())
@@ -240,6 +253,22 @@ impl ExecuteTradeUseCase {
             .build();
         self.event_publisher
             .publish_trade_executed(event.clone())
+            .await?;
+
+        // Publish position update event (Position Manager will handle Greeks + margin)
+        let position_event = crate::domain::events::PositionUpdated::new(
+            rfq.id(),
+            trade.id(),
+            rfq.client_id().clone(),
+            rfq.side(),
+            quote.venue_id().clone(),
+            rfq.side().opposite(),
+            rfq.instrument().clone(),
+            trade.quantity(),
+            trade.price(),
+        );
+        self.event_publisher
+            .publish_position_updated(position_event)
             .await?;
 
         // Send multi-channel trade confirmations (non-blocking)
@@ -461,6 +490,13 @@ mod tests {
             _rfq_id: RfqId,
             _quote_id: QuoteId,
             _reason: &str,
+        ) -> ApplicationResult<()> {
+            Ok(())
+        }
+
+        async fn publish_position_updated(
+            &self,
+            _event: crate::domain::events::PositionUpdated,
         ) -> ApplicationResult<()> {
             Ok(())
         }
