@@ -149,8 +149,20 @@ impl NatsPublisherWorker {
                         ) {
                             let version_str = format!("{}.{}.{}", major, minor, patch);
                             headers.insert("schema_version", version_str.as_str());
+                        } else {
+                            warn!(
+                                "Failed to extract schema_version fields from metadata for subject {}",
+                                subject
+                            );
                         }
+                    } else {
+                        warn!(
+                            "schema_version in metadata is not an object for subject {}",
+                            subject
+                        );
                     }
+                } else {
+                    debug!("No schema_version found in metadata for subject {}", subject);
                 }
             }
         }
