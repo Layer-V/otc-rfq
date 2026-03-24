@@ -197,6 +197,11 @@ impl TradeExecutedBuilder {
     /// # Panics
     ///
     /// Panics if any required field is missing.
+    ///
+    /// # Note
+    ///
+    /// For safer construction that returns a `Result` instead of panicking,
+    /// use [`try_build`](Self::try_build).
     #[must_use]
     #[allow(clippy::expect_used)]
     pub fn build(self) -> TradeExecuted {
@@ -215,6 +220,86 @@ impl TradeExecutedBuilder {
             maker_fee: self.maker_fee,
             net_fee: self.net_fee,
         }
+    }
+
+    /// Attempts to build the `TradeExecuted` event.
+    ///
+    /// Returns an error if any required field is missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DomainError::ValidationError` if any required field is missing:
+    /// - `rfq_id`
+    /// - `trade_id`
+    /// - `quote_id`
+    /// - `venue_id`
+    /// - `counterparty_id`
+    /// - `price`
+    /// - `quantity`
+    /// - `settlement_method`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use otc_rfq::domain::events::trade_events::TradeExecuted;
+    /// use otc_rfq::domain::value_objects::*;
+    ///
+    /// let result = TradeExecuted::builder()
+    ///     .rfq_id(RfqId::new_v4())
+    ///     .trade_id(TradeId::new_v4())
+    ///     .quote_id(QuoteId::new_v4())
+    ///     .venue_id(VenueId::new("venue-1"))
+    ///     .counterparty_id(CounterpartyId::new("client-1"))
+    ///     .price(Price::new(50000.0).unwrap())
+    ///     .quantity(Quantity::new(1.0).unwrap())
+    ///     .settlement_method(SettlementMethod::OffChain)
+    ///     .try_build();
+    ///
+    /// assert!(result.is_ok());
+    /// ```
+    pub fn try_build(self) -> crate::domain::errors::DomainResult<TradeExecuted> {
+        let rfq_id = self.rfq_id.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("rfq_id is required".to_string())
+        })?;
+        let trade_id = self.trade_id.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("trade_id is required".to_string())
+        })?;
+        let quote_id = self.quote_id.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("quote_id is required".to_string())
+        })?;
+        let venue_id = self.venue_id.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("venue_id is required".to_string())
+        })?;
+        let counterparty_id = self.counterparty_id.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError(
+                "counterparty_id is required".to_string(),
+            )
+        })?;
+        let price = self.price.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("price is required".to_string())
+        })?;
+        let quantity = self.quantity.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError("quantity is required".to_string())
+        })?;
+        let settlement_method = self.settlement_method.ok_or_else(|| {
+            crate::domain::errors::DomainError::ValidationError(
+                "settlement_method is required".to_string(),
+            )
+        })?;
+
+        Ok(TradeExecuted {
+            metadata: EventMetadata::for_rfq(rfq_id),
+            trade_id,
+            quote_id,
+            venue_id,
+            counterparty_id,
+            price,
+            quantity,
+            settlement_method,
+            taker_fee: self.taker_fee,
+            maker_fee: self.maker_fee,
+            net_fee: self.net_fee,
+        })
     }
 }
 
@@ -611,6 +696,7 @@ mod tests {
 
     mod trade_executed {
         use super::*;
+        use crate::domain::errors::DomainError;
 
         #[test]
         fn creates_event() {
@@ -703,6 +789,201 @@ mod tests {
                 .quantity(Quantity::new(1.0).unwrap())
                 .settlement_method(SettlementMethod::OffChain)
                 .build();
+        }
+
+        #[test]
+        fn try_build_success_all_fields() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .taker_fee(rust_decimal::Decimal::new(50, 1))
+                .maker_fee(rust_decimal::Decimal::new(-20, 1))
+                .net_fee(rust_decimal::Decimal::new(30, 1))
+                .try_build();
+
+            assert!(result.is_ok());
+            let event = result.unwrap();
+            assert_eq!(event.taker_fee, Some(rust_decimal::Decimal::new(50, 1)));
+            assert_eq!(event.maker_fee, Some(rust_decimal::Decimal::new(-20, 1)));
+            assert_eq!(event.net_fee, Some(rust_decimal::Decimal::new(30, 1)));
+        }
+
+        #[test]
+        fn try_build_success_required_only() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_ok());
+            let event = result.unwrap();
+            assert!(event.taker_fee.is_none());
+            assert!(event.maker_fee.is_none());
+            assert!(event.net_fee.is_none());
+        }
+
+        #[test]
+        fn try_build_missing_rfq_id() {
+            let result = TradeExecuted::builder()
+                // .rfq_id(test_rfq_id()) // Missing
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("rfq_id is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_trade_id() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                // .trade_id(test_trade_id()) // Missing
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("trade_id is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_quote_id() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                // .quote_id(test_quote_id()) // Missing
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("quote_id is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_venue_id() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                // .venue_id(test_venue_id()) // Missing
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("venue_id is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_counterparty_id() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                // .counterparty_id(test_counterparty_id()) // Missing
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("counterparty_id is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_price() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                // .price(Price::new(50000.0).unwrap()) // Missing
+                .quantity(Quantity::new(1.0).unwrap())
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("price is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_quantity() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                // .quantity(Quantity::new(1.0).unwrap()) // Missing
+                .settlement_method(SettlementMethod::OffChain)
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("quantity is required"))
+            );
+        }
+
+        #[test]
+        fn try_build_missing_settlement_method() {
+            let result = TradeExecuted::builder()
+                .rfq_id(test_rfq_id())
+                .trade_id(test_trade_id())
+                .quote_id(test_quote_id())
+                .venue_id(test_venue_id())
+                .counterparty_id(test_counterparty_id())
+                .price(Price::new(50000.0).unwrap())
+                .quantity(Quantity::new(1.0).unwrap())
+                // .settlement_method(SettlementMethod::OffChain) // Missing
+                .try_build();
+
+            assert!(result.is_err());
+            assert!(
+                matches!(result, Err(DomainError::ValidationError(ref msg)) if msg.contains("settlement_method is required"))
+            );
         }
     }
 
