@@ -189,9 +189,7 @@ impl MultiChannelConfirmationService {
 
         loop {
             // Pass destination by copy for each attempt in the retry loop
-            match Self::send_with_timeout_static(config, adapter, confirmation, destination)
-                .await
-            {
+            match Self::send_with_timeout_static(config, adapter, confirmation, destination).await {
                 Ok(()) => {
                     tracing::info!(
                         channel = %channel,
