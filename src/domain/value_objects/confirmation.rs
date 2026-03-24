@@ -6,6 +6,7 @@
 //! that are sent to counterparties via multiple channels (WebSocket,
 //! Email, API callbacks, gRPC).
 
+use crate::domain::value_objects::enums::ParseEnumError;
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{
     CounterpartyId, Price, Quantity, RfqId, SettlementMethod, TradeId,
@@ -13,6 +14,7 @@ use crate::domain::value_objects::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 /// Confirmation channel type.
 ///
@@ -53,6 +55,27 @@ impl ConfirmationChannel {
 impl fmt::Display for ConfirmationChannel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for ConfirmationChannel {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("WEBSOCKET") {
+            Ok(Self::WebSocket)
+        } else if s.eq_ignore_ascii_case("EMAIL") {
+            Ok(Self::Email)
+        } else if s.eq_ignore_ascii_case("API_CALLBACK") {
+            Ok(Self::ApiCallback)
+        } else if s.eq_ignore_ascii_case("GRPC") {
+            Ok(Self::Grpc)
+        } else {
+            Err(ParseEnumError::InvalidValue(
+                "ConfirmationChannel",
+                s.to_string(),
+            ))
+        }
     }
 }
 
@@ -330,6 +353,56 @@ mod tests {
         assert_eq!(ConfirmationChannel::Email.to_string(), "EMAIL");
         assert_eq!(ConfirmationChannel::ApiCallback.to_string(), "API_CALLBACK");
         assert_eq!(ConfirmationChannel::Grpc.to_string(), "GRPC");
+    }
+
+    #[test]
+    fn confirmation_channel_from_str_canonical_values() {
+        assert_eq!(
+            "WEBSOCKET".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::WebSocket)
+        );
+        assert_eq!(
+            "EMAIL".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::Email)
+        );
+        assert_eq!(
+            "API_CALLBACK".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::ApiCallback)
+        );
+        assert_eq!(
+            "GRPC".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::Grpc)
+        );
+    }
+
+    #[test]
+    fn confirmation_channel_from_str_case_insensitive() {
+        assert_eq!(
+            "websocket".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::WebSocket)
+        );
+        assert_eq!(
+            "Email".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::Email)
+        );
+        assert_eq!(
+            "api_callback".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::ApiCallback)
+        );
+        assert_eq!(
+            "gRpC".parse::<ConfirmationChannel>(),
+            Ok(ConfirmationChannel::Grpc)
+        );
+    }
+
+    #[test]
+    fn confirmation_channel_from_str_invalid_value() {
+        let result = "SMTP".parse::<ConfirmationChannel>();
+
+        assert!(matches!(
+            result,
+            Err(ParseEnumError::InvalidValue("ConfirmationChannel", ref value)) if value == "SMTP"
+        ));
     }
 
     #[test]

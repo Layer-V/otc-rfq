@@ -9,6 +9,7 @@ use crate::infrastructure::persistence::traits::{
 };
 use async_trait::async_trait;
 use sqlx::PgPool;
+use std::str::FromStr;
 
 /// PostgreSQL implementation of [`CounterpartyRepository`].
 ///
@@ -252,10 +253,16 @@ impl CounterpartyRow {
         let channels: Result<Vec<ConfirmationChannel>, _> = self
             .notification_channels
             .iter()
-            .map(|s| serde_json::from_str(&format!(r#""{}""#, s)))
+            .map(|s| {
+                ConfirmationChannel::from_str(s).map_err(|e| {
+                    RepositoryError::serialization(format!(
+                        "invalid confirmation channel '{}': {}",
+                        s, e
+                    ))
+                })
+            })
             .collect();
-        let channels = channels
-            .map_err(|e: serde_json::Error| RepositoryError::serialization(e.to_string()))?;
+        let channels = channels?;
 
         let notification_preferences = NotificationPreferences::new(
             channels,
