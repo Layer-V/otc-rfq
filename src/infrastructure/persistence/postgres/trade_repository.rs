@@ -123,7 +123,7 @@ impl TradeRepository for PostgresTradeRepository {
         Ok(())
     }
 
-    async fn get(&self, id: &TradeId) -> RepositoryResult<Option<Trade>> {
+    async fn get(&self, id: TradeId) -> RepositoryResult<Option<Trade>> {
         let id_str = id.to_string();
 
         let row: Option<TradeRow> = sqlx::query_as(
@@ -143,7 +143,7 @@ impl TradeRepository for PostgresTradeRepository {
         row.map(|r| r.try_into_trade()).transpose()
     }
 
-    async fn get_by_rfq(&self, rfq_id: &RfqId) -> RepositoryResult<Option<Trade>> {
+    async fn get_by_rfq(&self, rfq_id: RfqId) -> RepositoryResult<Option<Trade>> {
         let rfq_id_str = rfq_id.to_string();
 
         let row: Option<TradeRow> = sqlx::query_as(
@@ -252,7 +252,7 @@ impl TradeRepository for PostgresTradeRepository {
         rows.into_iter().map(|r| r.try_into_trade()).collect()
     }
 
-    async fn delete(&self, id: &TradeId) -> RepositoryResult<bool> {
+    async fn delete(&self, id: TradeId) -> RepositoryResult<bool> {
         let id_str = id.to_string();
 
         let result = sqlx::query("DELETE FROM trades WHERE id = $1")

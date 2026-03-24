@@ -137,7 +137,7 @@ impl RfqRepository for PostgresRfqRepository {
         Ok(())
     }
 
-    async fn get(&self, id: &RfqId) -> RepositoryResult<Option<Rfq>> {
+    async fn get(&self, id: RfqId) -> RepositoryResult<Option<Rfq>> {
         let id_str = id.to_string();
 
         let row: Option<RfqRow> = sqlx::query_as(
@@ -221,7 +221,7 @@ impl RfqRepository for PostgresRfqRepository {
         rows.into_iter().map(|r| r.try_into_rfq()).collect()
     }
 
-    async fn delete(&self, id: &RfqId) -> RepositoryResult<bool> {
+    async fn delete(&self, id: RfqId) -> RepositoryResult<bool> {
         let id_str = id.to_string();
 
         let result = sqlx::query("DELETE FROM rfqs WHERE id = $1")
