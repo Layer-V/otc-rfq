@@ -11,10 +11,10 @@
 //! use otc_rfq::infrastructure::persistence::event_store::{EventStore, StoredEvent};
 //!
 //! // Append an event
-//! event_store.append(&rfq_id, event).await?;
+//! event_store.append(event).await?;
 //!
 //! // Retrieve events for an RFQ
-//! let events = event_store.get_events(&rfq_id).await?;
+//! let events = event_store.get_events(rfq_id).await?;
 //! ```
 
 use crate::domain::events::domain_event::EventType;

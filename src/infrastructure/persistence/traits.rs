@@ -243,7 +243,7 @@ pub trait RfqRepository: Send + Sync + fmt::Debug {
 ///     let pending = repo.find_pending_settlement().await?;
 ///     
 ///     // Get a specific trade
-///     let trade = repo.get(&trade_id).await?;
+///     let trade = repo.get(trade_id).await?;
 /// }
 /// ```
 #[async_trait]
@@ -501,10 +501,10 @@ pub trait DelayedReportRepository: Send + Sync + fmt::Debug {
 ///     repo.save(&mapping).await?;
 ///     
 ///     // Retrieve for settlement
-///     let mapping = repo.get(&rfq_id).await?;
+///     let mapping = repo.get(rfq_id).await?;
 ///     
 ///     // Record identity reveal
-///     repo.record_reveal(&rfq_id, &counterparty_id).await?;
+///     repo.record_reveal(rfq_id, &counterparty_id).await?;
 /// }
 /// ```
 #[async_trait]

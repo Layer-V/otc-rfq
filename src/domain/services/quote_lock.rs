@@ -37,12 +37,6 @@ impl LockHolderId {
         Self(Uuid::new_v4())
     }
 
-    /// Creates a lock holder ID from an existing UUID.
-    #[must_use]
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-
     /// Returns the inner UUID.
     #[must_use]
     pub fn as_uuid(&self) -> Uuid {
@@ -53,6 +47,13 @@ impl LockHolderId {
 impl Default for LockHolderId {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Uuid> for LockHolderId {
+    #[inline]
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
     }
 }
 
@@ -284,14 +285,14 @@ mod tests {
     #[test]
     fn lock_holder_id_from_uuid() {
         let uuid = Uuid::new_v4();
-        let id = LockHolderId::from_uuid(uuid);
+        let id = LockHolderId::from(uuid);
         assert_eq!(id.as_uuid(), uuid);
     }
 
     #[test]
     fn lock_holder_id_display() {
         let uuid = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let id = LockHolderId::from_uuid(uuid);
+        let id = LockHolderId::from(uuid);
         assert_eq!(id.to_string(), "550e8400-e29b-41d4-a716-446655440000");
     }
 
