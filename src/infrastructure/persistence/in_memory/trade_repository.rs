@@ -181,7 +181,7 @@ mod tests {
 
         repo.save(&trade).await.unwrap();
 
-        let retrieved = repo.get(&id).await.unwrap();
+        let retrieved = repo.get(id).await.unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id(), id);
     }
@@ -191,7 +191,7 @@ mod tests {
         let repo = InMemoryTradeRepository::new();
         let id = TradeId::new_v4();
 
-        let result = repo.get(&id).await.unwrap();
+        let result = repo.get(id).await.unwrap();
         assert!(result.is_none());
     }
 
@@ -203,7 +203,7 @@ mod tests {
 
         repo.save(&trade).await.unwrap();
 
-        let retrieved = repo.get_by_rfq(&rfq_id).await.unwrap();
+        let retrieved = repo.get_by_rfq(rfq_id).await.unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().rfq_id(), rfq_id);
     }
@@ -247,7 +247,7 @@ mod tests {
         repo.save(&trade).await.unwrap();
         assert_eq!(repo.count().await.unwrap(), 1);
 
-        let deleted = repo.delete(&id).await.unwrap();
+        let deleted = repo.delete(id).await.unwrap();
         assert!(deleted);
         assert_eq!(repo.count().await.unwrap(), 0);
     }

@@ -205,7 +205,7 @@ mod tests {
 
         repo.save(&rfq).await.unwrap();
 
-        let retrieved = repo.get(&id).await.unwrap();
+        let retrieved = repo.get(id).await.unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().id(), id);
     }
@@ -215,7 +215,7 @@ mod tests {
         let repo = InMemoryRfqRepository::new();
         let id = RfqId::new_v4();
 
-        let result = repo.get(&id).await.unwrap();
+        let result = repo.get(id).await.unwrap();
         assert!(result.is_none());
     }
 
@@ -264,12 +264,12 @@ mod tests {
         repo.save(&rfq).await.unwrap();
         assert_eq!(repo.count().await.unwrap(), 1);
 
-        let deleted = repo.delete(&id).await.unwrap();
+        let deleted = repo.delete(id).await.unwrap();
         assert!(deleted);
         assert_eq!(repo.count().await.unwrap(), 0);
 
         // Delete again returns false
-        let deleted_again = repo.delete(&id).await.unwrap();
+        let deleted_again = repo.delete(id).await.unwrap();
         assert!(!deleted_again);
     }
 

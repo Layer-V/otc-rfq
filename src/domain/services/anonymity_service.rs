@@ -153,7 +153,7 @@ impl AnonymityService {
     /// Returns `AnonymityError::Repository` if the query fails.
     pub async fn get_mapping(&self, rfq_id: RfqId) -> AnonymityResult<IdentityMapping> {
         self.identity_repository
-            .get(&rfq_id)
+            .get(rfq_id)
             .await?
             .ok_or(AnonymityError::MappingNotFound(rfq_id))
     }
@@ -186,7 +186,7 @@ impl AnonymityService {
 
         // Record the reveal
         self.identity_repository
-            .record_reveal(&rfq_id, reveal_to)
+            .record_reveal(rfq_id, reveal_to)
             .await?;
 
         Ok(mapping.requester_id().clone())
@@ -301,17 +301,17 @@ mod tests {
             Ok(())
         }
 
-        async fn get(&self, rfq_id: &RfqId) -> RepositoryResult<Option<IdentityMapping>> {
-            Ok(self.mappings.lock().unwrap().get(rfq_id).cloned())
+        async fn get(&self, rfq_id: RfqId) -> RepositoryResult<Option<IdentityMapping>> {
+            Ok(self.mappings.lock().unwrap().get(&rfq_id).cloned())
         }
 
         async fn record_reveal(
             &self,
-            rfq_id: &RfqId,
+            rfq_id: RfqId,
             revealed_to: &CounterpartyId,
         ) -> RepositoryResult<()> {
             let mut mappings = self.mappings.lock().unwrap();
-            if let Some(mapping) = mappings.get_mut(rfq_id) {
+            if let Some(mapping) = mappings.get_mut(&rfq_id) {
                 mapping.reveal_to(revealed_to.clone());
                 Ok(())
             } else {
@@ -346,8 +346,8 @@ mod tests {
                 .collect())
         }
 
-        async fn delete(&self, rfq_id: &RfqId) -> RepositoryResult<bool> {
-            Ok(self.mappings.lock().unwrap().remove(rfq_id).is_some())
+        async fn delete(&self, rfq_id: RfqId) -> RepositoryResult<bool> {
+            Ok(self.mappings.lock().unwrap().remove(&rfq_id).is_some())
         }
 
         async fn count(&self) -> RepositoryResult<u64> {
