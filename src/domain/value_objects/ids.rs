@@ -12,11 +12,20 @@
 //! - [`TradeId`] - Trade identifier
 //! - [`EventId`] - Domain event identifier
 //! - [`BlockTradeId`] - Block Trade identifier
+//! - [`NegotiationId`] - Negotiation identifier
+//! - [`PackageQuoteId`] - Package quote identifier
 //!
 //! ## String-based Identifiers
 //!
 //! - [`VenueId`] - Venue identifier
 //! - [`CounterpartyId`] - Counterparty identifier
+//!
+//! ## Usage Patterns
+//!
+//! UUID IDs should be constructed using:
+//! - `RfqId::new(uuid)` - explicit construction from UUID
+//! - `RfqId::from(uuid)` - via From trait (preferred for conversions)
+//! - `RfqId::new_v4()` - generate new random ID
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -60,13 +69,6 @@ impl RfqId {
     #[must_use]
     pub const fn get(self) -> Uuid {
         self.0
-    }
-
-    /// Creates an RFQ ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
     }
 }
 
@@ -119,13 +121,6 @@ impl QuoteId {
     pub const fn get(self) -> Uuid {
         self.0
     }
-
-    /// Creates a Quote ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
 }
 
 impl fmt::Display for QuoteId {
@@ -176,13 +171,6 @@ impl BlockTradeId {
     #[must_use]
     pub const fn get(self) -> Uuid {
         self.0
-    }
-
-    /// Creates a Block Trade ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
     }
 }
 
@@ -242,13 +230,6 @@ impl TradeId {
     pub const fn get(self) -> Uuid {
         self.0
     }
-
-    /// Creates a Trade ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
 }
 
 impl fmt::Display for TradeId {
@@ -299,13 +280,6 @@ impl EventId {
     #[must_use]
     pub const fn get(self) -> Uuid {
         self.0
-    }
-
-    /// Creates an Event ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
     }
 }
 
@@ -358,13 +332,6 @@ impl NegotiationId {
     #[must_use]
     pub const fn get(self) -> Uuid {
         self.0
-    }
-
-    /// Creates a Negotiation ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
     }
 }
 
@@ -482,13 +449,6 @@ impl PackageQuoteId {
     #[must_use]
     pub const fn get(self) -> Uuid {
         self.0
-    }
-
-    /// Creates a Package Quote ID from a UUID reference.
-    #[inline]
-    #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
     }
 }
 
