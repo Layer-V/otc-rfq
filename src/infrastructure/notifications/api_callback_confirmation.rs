@@ -62,7 +62,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
             NotificationDestination::Webhook(url) => url,
             _ => {
                 return Err(DomainError::InvalidNotificationPreferences {
-                    reason: format!("Expected Webhook destination, got {:?}", destination),
+                    reason: "Expected Webhook destination".to_string(),
                 });
             }
         };

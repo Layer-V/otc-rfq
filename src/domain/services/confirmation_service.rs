@@ -283,56 +283,37 @@ impl ConfirmationService for MultiChannelConfirmationService {
             let adapter = Arc::clone(adapter);
             let confirmation = confirmation.clone();
             let config = self.config.clone();
+            let channel = adapter.channel_type();
 
-            // Map preferences to the specific destination for this adapter
-            let destination = match adapter.channel_type() {
-                ConfirmationChannel::Email => {
-                    if let Some(email) = preferences.email_address() {
-                        NotificationDestination::Email(email)
-                    } else {
-                        continue;
-                    }
-                }
-                ConfirmationChannel::ApiCallback => {
-                    if let Some(url) = preferences.webhook_url() {
-                        NotificationDestination::Webhook(url)
-                    } else {
-                        continue;
-                    }
-                }
-                ConfirmationChannel::WebSocket => NotificationDestination::WebSocket,
-                ConfirmationChannel::Grpc => {
-                    NotificationDestination::Grpc(preferences.grpc_endpoint())
-                }
-            };
-
-            // Capture needed data for the task
-            let email_str = if let NotificationDestination::Email(s) = destination {
-                Some(s.to_string())
-            } else {
-                None
-            };
-            let webhook_str = if let NotificationDestination::Webhook(s) = destination {
-                Some(s.to_string())
-            } else {
-                None
-            };
+            // Extract destinations as owned strings to move into the task
+            let email_str = preferences.email_address().map(|s| s.to_string());
+            let webhook_str = preferences.webhook_url().map(|s| s.to_string());
             let grpc_endpoint = preferences.grpc_endpoint().map(|s| s.to_string());
 
             tasks.push(tokio::spawn(async move {
-                let dest = match adapter.channel_type() {
+                // Validate destination before sending
+                let destination = match channel {
                     ConfirmationChannel::Email => {
-                        NotificationDestination::Email(email_str.as_deref().unwrap_or(""))
+                        email_str.as_deref().map(NotificationDestination::Email)
                     }
                     ConfirmationChannel::ApiCallback => {
-                        NotificationDestination::Webhook(webhook_str.as_deref().unwrap_or(""))
+                        webhook_str.as_deref().map(NotificationDestination::Webhook)
                     }
-                    ConfirmationChannel::WebSocket => NotificationDestination::WebSocket,
+                    ConfirmationChannel::WebSocket => Some(NotificationDestination::WebSocket),
                     ConfirmationChannel::Grpc => {
-                        NotificationDestination::Grpc(grpc_endpoint.as_deref())
+                        Some(NotificationDestination::Grpc(grpc_endpoint.as_deref()))
                     }
                 };
-                Self::send_with_retry_static(&config, &adapter, &confirmation, dest).await
+
+                if let Some(dest) = destination {
+                    Self::send_with_retry_static(&config, &adapter, &confirmation, dest).await
+                } else {
+                    ChannelDeliveryStatus::failed(
+                        channel,
+                        format!("Missing required destination for channel {}", channel),
+                        0,
+                    )
+                }
             }));
         }
 

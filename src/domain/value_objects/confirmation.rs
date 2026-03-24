@@ -38,7 +38,7 @@ pub enum ConfirmationChannel {
 /// This enum allows decoupling the adapters from the full
 /// `NotificationPreferences` struct, ensuring they only receive
 /// the specific routing information they need.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationDestination<'a> {
     /// Email address for email notifications.
     Email(&'a str),

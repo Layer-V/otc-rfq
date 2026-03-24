@@ -117,9 +117,14 @@ impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
     async fn send(
         &self,
         confirmation: &TradeConfirmation,
-        _destination: NotificationDestination<'_>,
+        destination: NotificationDestination<'_>,
     ) -> DomainResult<()> {
-        let _buyer_id = confirmation.buyer_id();
+        // Ensure destination is WebSocket
+        if !matches!(destination, NotificationDestination::WebSocket) {
+            return Err(DomainError::InvalidNotificationPreferences {
+                reason: "Expected WebSocket destination".to_string(),
+            });
+        }
         // Serialize confirmation to JSON
         let message =
             serde_json::to_string(confirmation).map_err(|e| DomainError::ConfirmationFailed {

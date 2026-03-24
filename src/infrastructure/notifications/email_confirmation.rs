@@ -206,7 +206,7 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
             NotificationDestination::Email(addr) => addr,
             _ => {
                 return Err(DomainError::InvalidNotificationPreferences {
-                    reason: format!("Expected Email destination, got {:?}", destination),
+                    reason: "Expected Email destination".to_string(),
                 });
             }
         };

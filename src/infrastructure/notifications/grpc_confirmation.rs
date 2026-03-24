@@ -116,8 +116,14 @@ impl ConfirmationChannelAdapter for GrpcConfirmationAdapter {
     async fn send(
         &self,
         confirmation: &TradeConfirmation,
-        _destination: NotificationDestination<'_>,
+        destination: NotificationDestination<'_>,
     ) -> DomainResult<()> {
+        // Ensure destination is Grpc
+        if !matches!(destination, NotificationDestination::Grpc(_)) {
+            return Err(DomainError::InvalidNotificationPreferences {
+                reason: "Expected Grpc destination".to_string(),
+            });
+        }
         // Get streams for both buyer and seller
         let buyer_streams = self.client_registry.get_streams(confirmation.buyer_id());
         let seller_streams = self.client_registry.get_streams(confirmation.seller_id());
