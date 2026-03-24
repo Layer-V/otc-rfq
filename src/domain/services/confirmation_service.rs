@@ -10,7 +10,8 @@
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::value_objects::NotificationPreferences;
 use crate::domain::value_objects::confirmation::{
-    ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, TradeConfirmation,
+    ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, NotificationDestination,
+    TradeConfirmation,
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -84,18 +85,31 @@ impl ConfirmationConfig {
     }
 }
 
-/// Trait for channel-specific confirmation adapters.
+/// Trait for confirmation channel adapters.
+///
+/// Adapters are responsible for the actual delivery of trade
+/// confirmations via a specific channel (Email, Webhook, etc.).
 #[async_trait]
 pub trait ConfirmationChannelAdapter: Send + Sync + fmt::Debug {
-    /// Sends a confirmation via this channel.
+    /// Sends a trade confirmation via the adapter's channel.
+    ///
+    /// # Arguments
+    ///
+    /// * `confirmation` - The trade confirmation data to send.
+    /// * `destination` - The targeted destination for this delivery.
     ///
     /// # Errors
     ///
-    /// Returns an error if the confirmation delivery fails.
-    async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()>;
+    /// Returns a `DomainError` if the delivery fails.
+    async fn send(
+        &self,
+        confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
+    ) -> DomainResult<()>;
 
-    /// Returns the channel type.
-    fn channel(&self) -> ConfirmationChannel;
+    /// Returns the type of channel this adapter supports.
+    #[must_use]
+    fn channel_type(&self) -> ConfirmationChannel;
 }
 
 /// Trait for multi-channel confirmation service.
@@ -150,26 +164,35 @@ impl MultiChannelConfirmationService {
         config: &ConfirmationConfig,
         adapter: &Arc<dyn ConfirmationChannelAdapter>,
         confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
     ) -> DomainResult<()> {
-        tokio::time::timeout(config.timeout_per_channel, adapter.send(confirmation))
-            .await
-            .map_err(|_| DomainError::ConfirmationFailed {
-                channel: adapter.channel().to_string(),
-                reason: "Timeout".to_string(),
-            })?
+        tokio::time::timeout(
+            config.timeout_per_channel,
+            adapter.send(confirmation, destination),
+        )
+        .await
+        .map_err(|_| DomainError::ConfirmationFailed {
+            channel: adapter.channel_type().to_string(),
+            reason: "Timeout".to_string(),
+        })?
     }
 
-    /// Sends confirmation via a single channel with retry logic (static version).
+    /// Static helper for sending with retry logic to avoid 'self' lifetime issues in spawned tasks.
     async fn send_with_retry_static(
         config: &ConfirmationConfig,
         adapter: &Arc<dyn ConfirmationChannelAdapter>,
         confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
     ) -> ChannelDeliveryStatus {
-        let channel = adapter.channel();
+        let channel = adapter.channel_type();
         let mut attempts = 0;
 
         loop {
-            match Self::send_with_timeout_static(config, adapter, confirmation).await {
+            // Need to clone destination for each attempt because of lifetime issues in retry loop
+            // but since it's an enum with references, we just copy it.
+            match Self::send_with_timeout_static(config, adapter, confirmation, destination.clone())
+                .await
+            {
                 Ok(()) => {
                     tracing::info!(
                         channel = %channel,
@@ -193,7 +216,7 @@ impl MultiChannelConfirmationService {
                         return ChannelDeliveryStatus::failed(
                             channel,
                             format!("Failed after {} attempts: {}", attempts, e),
-                            attempts,
+                            attempts.saturating_sub(1),
                         );
                     }
 
@@ -210,26 +233,6 @@ impl MultiChannelConfirmationService {
                 }
             }
         }
-    }
-
-    /// Sends confirmation via a single channel with retry logic.
-    #[allow(dead_code)]
-    async fn send_with_retry(
-        &self,
-        adapter: &Arc<dyn ConfirmationChannelAdapter>,
-        confirmation: &TradeConfirmation,
-    ) -> ChannelDeliveryStatus {
-        Self::send_with_retry_static(&self.config, adapter, confirmation).await
-    }
-
-    /// Sends confirmation with timeout.
-    #[allow(dead_code)]
-    async fn send_with_timeout(
-        &self,
-        adapter: &Arc<dyn ConfirmationChannelAdapter>,
-        confirmation: &TradeConfirmation,
-    ) -> DomainResult<()> {
-        Self::send_with_timeout_static(&self.config, adapter, confirmation).await
     }
 }
 
@@ -254,7 +257,7 @@ impl ConfirmationService for MultiChannelConfirmationService {
         let active_adapters: Vec<_> = self
             .adapters
             .iter()
-            .filter(|adapter| enabled_channels.contains(&adapter.channel()))
+            .filter(|adapter| enabled_channels.contains(&adapter.channel_type()))
             .collect();
 
         if active_adapters.is_empty() {
@@ -274,14 +277,62 @@ impl ConfirmationService for MultiChannelConfirmationService {
         );
 
         // Send to all channels in parallel
-        let mut tasks = Vec::new();
+        let mut tasks = Vec::with_capacity(active_adapters.len());
+
         for adapter in active_adapters {
             let adapter = Arc::clone(adapter);
             let confirmation = confirmation.clone();
             let config = self.config.clone();
 
+            // Map preferences to the specific destination for this adapter
+            let destination = match adapter.channel_type() {
+                ConfirmationChannel::Email => {
+                    if let Some(email) = preferences.email_address() {
+                        NotificationDestination::Email(email)
+                    } else {
+                        continue;
+                    }
+                }
+                ConfirmationChannel::ApiCallback => {
+                    if let Some(url) = preferences.webhook_url() {
+                        NotificationDestination::Webhook(url)
+                    } else {
+                        continue;
+                    }
+                }
+                ConfirmationChannel::WebSocket => NotificationDestination::WebSocket,
+                ConfirmationChannel::Grpc => {
+                    NotificationDestination::Grpc(preferences.grpc_endpoint())
+                }
+            };
+
+            // Capture needed data for the task
+            let email_str = if let NotificationDestination::Email(s) = destination {
+                Some(s.to_string())
+            } else {
+                None
+            };
+            let webhook_str = if let NotificationDestination::Webhook(s) = destination {
+                Some(s.to_string())
+            } else {
+                None
+            };
+            let grpc_endpoint = preferences.grpc_endpoint().map(|s| s.to_string());
+
             tasks.push(tokio::spawn(async move {
-                Self::send_with_retry_static(&config, &adapter, &confirmation).await
+                let dest = match adapter.channel_type() {
+                    ConfirmationChannel::Email => {
+                        NotificationDestination::Email(email_str.as_deref().unwrap_or(""))
+                    }
+                    ConfirmationChannel::ApiCallback => {
+                        NotificationDestination::Webhook(webhook_str.as_deref().unwrap_or(""))
+                    }
+                    ConfirmationChannel::WebSocket => NotificationDestination::WebSocket,
+                    ConfirmationChannel::Grpc => {
+                        NotificationDestination::Grpc(grpc_endpoint.as_deref())
+                    }
+                };
+                Self::send_with_retry_static(&config, &adapter, &confirmation, dest).await
             }));
         }
 
@@ -324,15 +375,15 @@ mod tests {
 
     #[derive(Debug)]
     struct MockAdapter {
-        channel: ConfirmationChannel,
+        channel_type: ConfirmationChannel,
         should_fail: bool,
         call_count: Arc<AtomicU32>,
     }
 
     impl MockAdapter {
-        fn new(channel: ConfirmationChannel, should_fail: bool) -> Self {
+        fn new(channel_type: ConfirmationChannel, should_fail: bool) -> Self {
             Self {
-                channel,
+                channel_type,
                 should_fail,
                 call_count: Arc::new(AtomicU32::new(0)),
             }
@@ -345,12 +396,16 @@ mod tests {
 
     #[async_trait]
     impl ConfirmationChannelAdapter for MockAdapter {
-        async fn send(&self, _confirmation: &TradeConfirmation) -> DomainResult<()> {
+        async fn send(
+            &self,
+            _confirmation: &TradeConfirmation,
+            _destination: NotificationDestination<'_>,
+        ) -> DomainResult<()> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
 
             if self.should_fail {
                 Err(DomainError::ConfirmationFailed {
-                    channel: self.channel.to_string(),
+                    channel: self.channel_type.to_string(),
                     reason: "Mock failure".to_string(),
                 })
             } else {
@@ -358,8 +413,8 @@ mod tests {
             }
         }
 
-        fn channel(&self) -> ConfirmationChannel {
-            self.channel
+        fn channel_type(&self) -> ConfirmationChannel {
+            self.channel_type
         }
     }
 

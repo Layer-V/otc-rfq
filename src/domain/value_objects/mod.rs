@@ -69,7 +69,8 @@ mod tests;
 pub use arithmetic::{ArithmeticError, ArithmeticResult, CheckedArithmetic, Rounding, div_round};
 pub use compliance::{ComplianceCheckResults, ComplianceCheckResultsBuilder, RegulatoryFlag};
 pub use confirmation::{
-    ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, TradeConfirmation,
+    ChannelDeliveryStatus, ConfirmationChannel, ConfirmationStatus, NotificationDestination,
+    TradeConfirmation,
 };
 pub use enums::{AssetClass, Blockchain, OrderSide, ParseEnumError, SettlementMethod, VenueType};
 pub use ids::{
