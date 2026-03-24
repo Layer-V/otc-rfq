@@ -10,6 +10,7 @@
 //! TradeExecuted -> SettlementInitiated -> SettlementConfirmed | SettlementFailed
 //! ```
 
+use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::events::domain_event::{DomainEvent, EventMetadata, EventType};
 use crate::domain::value_objects::timestamp::Timestamp;
 use crate::domain::value_objects::{
@@ -126,6 +127,56 @@ pub struct TradeExecutedBuilder {
 }
 
 impl TradeExecutedBuilder {
+    #[inline]
+    fn missing_required_field(field: &str) -> DomainError {
+        DomainError::ValidationError(format!("{field} is required"))
+    }
+
+    #[inline]
+    fn build_from_fields(
+        required: (
+            RfqId,
+            TradeId,
+            QuoteId,
+            VenueId,
+            CounterpartyId,
+            Price,
+            Quantity,
+            SettlementMethod,
+        ),
+        fees: (
+            Option<rust_decimal::Decimal>,
+            Option<rust_decimal::Decimal>,
+            Option<rust_decimal::Decimal>,
+        ),
+    ) -> TradeExecuted {
+        let (
+            rfq_id,
+            trade_id,
+            quote_id,
+            venue_id,
+            counterparty_id,
+            price,
+            quantity,
+            settlement_method,
+        ) = required;
+        let (taker_fee, maker_fee, net_fee) = fees;
+
+        TradeExecuted {
+            metadata: EventMetadata::for_rfq(rfq_id),
+            trade_id,
+            quote_id,
+            venue_id,
+            counterparty_id,
+            price,
+            quantity,
+            settlement_method,
+            taker_fee,
+            maker_fee,
+            net_fee,
+        }
+    }
+
     /// Sets the RFQ ID.
     pub fn rfq_id(mut self, value: RfqId) -> Self {
         self.rfq_id = Some(value);
@@ -205,21 +256,32 @@ impl TradeExecutedBuilder {
     #[must_use]
     #[allow(clippy::expect_used)]
     pub fn build(self) -> TradeExecuted {
-        TradeExecuted {
-            metadata: EventMetadata::for_rfq(self.rfq_id.expect("rfq_id is required")),
-            trade_id: self.trade_id.expect("trade_id is required"),
-            quote_id: self.quote_id.expect("quote_id is required"),
-            venue_id: self.venue_id.expect("venue_id is required"),
-            counterparty_id: self.counterparty_id.expect("counterparty_id is required"),
-            price: self.price.expect("price is required"),
-            quantity: self.quantity.expect("quantity is required"),
-            settlement_method: self
-                .settlement_method
-                .expect("settlement_method is required"),
-            taker_fee: self.taker_fee,
-            maker_fee: self.maker_fee,
-            net_fee: self.net_fee,
-        }
+        let Self {
+            rfq_id,
+            trade_id,
+            quote_id,
+            venue_id,
+            counterparty_id,
+            price,
+            quantity,
+            settlement_method,
+            taker_fee,
+            maker_fee,
+            net_fee,
+        } = self;
+
+        let required_fields = (
+            rfq_id.expect("rfq_id is required"),
+            trade_id.expect("trade_id is required"),
+            quote_id.expect("quote_id is required"),
+            venue_id.expect("venue_id is required"),
+            counterparty_id.expect("counterparty_id is required"),
+            price.expect("price is required"),
+            quantity.expect("quantity is required"),
+            settlement_method.expect("settlement_method is required"),
+        );
+
+        Self::build_from_fields(required_fields, (taker_fee, maker_fee, net_fee))
     }
 
     /// Attempts to build the `TradeExecuted` event.
@@ -257,38 +319,9 @@ impl TradeExecutedBuilder {
     ///
     /// assert!(result.is_ok());
     /// ```
-    pub fn try_build(self) -> crate::domain::errors::DomainResult<TradeExecuted> {
-        let rfq_id = self.rfq_id.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("rfq_id is required".to_string())
-        })?;
-        let trade_id = self.trade_id.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("trade_id is required".to_string())
-        })?;
-        let quote_id = self.quote_id.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("quote_id is required".to_string())
-        })?;
-        let venue_id = self.venue_id.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("venue_id is required".to_string())
-        })?;
-        let counterparty_id = self.counterparty_id.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError(
-                "counterparty_id is required".to_string(),
-            )
-        })?;
-        let price = self.price.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("price is required".to_string())
-        })?;
-        let quantity = self.quantity.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError("quantity is required".to_string())
-        })?;
-        let settlement_method = self.settlement_method.ok_or_else(|| {
-            crate::domain::errors::DomainError::ValidationError(
-                "settlement_method is required".to_string(),
-            )
-        })?;
-
-        Ok(TradeExecuted {
-            metadata: EventMetadata::for_rfq(rfq_id),
+    pub fn try_build(self) -> DomainResult<TradeExecuted> {
+        let Self {
+            rfq_id,
             trade_id,
             quote_id,
             venue_id,
@@ -296,10 +329,26 @@ impl TradeExecutedBuilder {
             price,
             quantity,
             settlement_method,
-            taker_fee: self.taker_fee,
-            maker_fee: self.maker_fee,
-            net_fee: self.net_fee,
-        })
+            taker_fee,
+            maker_fee,
+            net_fee,
+        } = self;
+
+        let required_fields = (
+            rfq_id.ok_or_else(|| Self::missing_required_field("rfq_id"))?,
+            trade_id.ok_or_else(|| Self::missing_required_field("trade_id"))?,
+            quote_id.ok_or_else(|| Self::missing_required_field("quote_id"))?,
+            venue_id.ok_or_else(|| Self::missing_required_field("venue_id"))?,
+            counterparty_id.ok_or_else(|| Self::missing_required_field("counterparty_id"))?,
+            price.ok_or_else(|| Self::missing_required_field("price"))?,
+            quantity.ok_or_else(|| Self::missing_required_field("quantity"))?,
+            settlement_method.ok_or_else(|| Self::missing_required_field("settlement_method"))?,
+        );
+
+        Ok(Self::build_from_fields(
+            required_fields,
+            (taker_fee, maker_fee, net_fee),
+        ))
     }
 }
 
