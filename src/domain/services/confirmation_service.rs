@@ -188,9 +188,8 @@ impl MultiChannelConfirmationService {
         let mut attempts = 0;
 
         loop {
-            // Need to clone destination for each attempt because of lifetime issues in retry loop
-            // but since it's an enum with references, we just copy it.
-            match Self::send_with_timeout_static(config, adapter, confirmation, destination.clone())
+            // Pass destination by copy for each attempt in the retry loop
+            match Self::send_with_timeout_static(config, adapter, confirmation, destination)
                 .await
             {
                 Ok(()) => {
