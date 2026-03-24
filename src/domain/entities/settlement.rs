@@ -31,7 +31,7 @@ impl SettlementId {
 
     /// Creates a settlement ID from a UUID.
     #[must_use]
-    pub const fn from_uuid(uuid: Uuid) -> Self {
+    pub const fn new(uuid: Uuid) -> Self {
         Self(uuid)
     }
 
@@ -46,6 +46,13 @@ impl SettlementId {
 impl fmt::Display for SettlementId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<Uuid> for SettlementId {
+    #[inline]
+    fn from(uuid: Uuid) -> Self {
+        Self(uuid)
     }
 }
 
