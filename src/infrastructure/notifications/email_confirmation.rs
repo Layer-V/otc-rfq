@@ -4,7 +4,9 @@
 
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
+use crate::domain::value_objects::confirmation::{
+    ConfirmationChannel, NotificationDestination, TradeConfirmation,
+};
 use async_trait::async_trait;
 use lettre::message::{MultiPart, SinglePart, header};
 use lettre::transport::smtp::authentication::Credentials;
@@ -45,14 +47,13 @@ impl Default for SmtpConfig {
 #[derive(Debug)]
 pub struct EmailConfirmationAdapter {
     config: SmtpConfig,
-    to_address: String,
 }
 
 impl EmailConfirmationAdapter {
     /// Creates a new email confirmation adapter.
     #[must_use]
-    pub fn new(config: SmtpConfig, to_address: String) -> Self {
-        Self { config, to_address }
+    pub fn new(config: SmtpConfig) -> Self {
+        Self { config }
     }
 
     /// Generates HTML email body for trade confirmation.
@@ -195,7 +196,21 @@ This is an automated message. Please do not reply to this email.
 
 #[async_trait]
 impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
-    async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
+    async fn send(
+        &self,
+        confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
+    ) -> DomainResult<()> {
+        // Extract email address from destination
+        let to_address = match destination {
+            NotificationDestination::Email(addr) => addr,
+            _ => {
+                return Err(DomainError::InvalidNotificationPreferences {
+                    reason: "Expected Email destination".to_string(),
+                });
+            }
+        };
+
         // Build email message
         let email = Message::builder()
             .from(
@@ -206,8 +221,7 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
                         reason: format!("Invalid from address: {}", e),
                     })?,
             )
-            .to(self
-                .to_address
+            .to(to_address
                 .parse()
                 .map_err(|e| DomainError::ConfirmationFailed {
                     channel: "EMAIL".to_string(),
@@ -256,14 +270,14 @@ impl ConfirmationChannelAdapter for EmailConfirmationAdapter {
 
         tracing::info!(
             trade_id = %confirmation.trade_id(),
-            to = %self.to_address,
+            to = %to_address,
             "Email confirmation sent successfully"
         );
 
         Ok(())
     }
 
-    fn channel(&self) -> ConfirmationChannel {
+    fn channel_type(&self) -> ConfirmationChannel {
         ConfirmationChannel::Email
     }
 }
@@ -295,7 +309,7 @@ mod tests {
     #[test]
     fn generate_html_body_contains_trade_details() {
         let config = SmtpConfig::default();
-        let adapter = EmailConfirmationAdapter::new(config, "test@example.com".to_string());
+        let adapter = EmailConfirmationAdapter::new(config);
         let confirmation = create_test_confirmation();
 
         let html = adapter.generate_html_body(&confirmation);
@@ -310,7 +324,7 @@ mod tests {
     #[test]
     fn generate_text_body_contains_trade_details() {
         let config = SmtpConfig::default();
-        let adapter = EmailConfirmationAdapter::new(config, "test@example.com".to_string());
+        let adapter = EmailConfirmationAdapter::new(config);
         let confirmation = create_test_confirmation();
 
         let text = adapter.generate_text_body(&confirmation);
@@ -325,7 +339,22 @@ mod tests {
     #[test]
     fn channel_returns_email() {
         let config = SmtpConfig::default();
-        let adapter = EmailConfirmationAdapter::new(config, "test@example.com".to_string());
-        assert_eq!(adapter.channel(), ConfirmationChannel::Email);
+        let adapter = EmailConfirmationAdapter::new(config);
+        assert_eq!(adapter.channel_type(), ConfirmationChannel::Email);
+    }
+
+    #[tokio::test]
+    async fn send_error_on_invalid_destination() {
+        let config = SmtpConfig::default();
+        let adapter = EmailConfirmationAdapter::new(config);
+        let confirmation = create_test_confirmation();
+        let destination = NotificationDestination::WebSocket;
+
+        let result = adapter.send(&confirmation, destination).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            DomainError::InvalidNotificationPreferences { .. }
+        ));
     }
 }

@@ -5,7 +5,9 @@
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
 use crate::domain::value_objects::CounterpartyId;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
+use crate::domain::value_objects::confirmation::{
+    ConfirmationChannel, NotificationDestination, TradeConfirmation,
+};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::fmt;
@@ -111,7 +113,17 @@ impl GrpcConfirmationAdapter {
 
 #[async_trait]
 impl ConfirmationChannelAdapter for GrpcConfirmationAdapter {
-    async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
+    async fn send(
+        &self,
+        confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
+    ) -> DomainResult<()> {
+        // Ensure destination is Grpc
+        if !matches!(destination, NotificationDestination::Grpc(_)) {
+            return Err(DomainError::InvalidNotificationPreferences {
+                reason: "Expected Grpc destination".to_string(),
+            });
+        }
         // Get streams for both buyer and seller
         let buyer_streams = self.client_registry.get_streams(confirmation.buyer_id());
         let seller_streams = self.client_registry.get_streams(confirmation.seller_id());
@@ -174,7 +186,7 @@ impl ConfirmationChannelAdapter for GrpcConfirmationAdapter {
         }
     }
 
-    fn channel(&self) -> ConfirmationChannel {
+    fn channel_type(&self) -> ConfirmationChannel {
         ConfirmationChannel::Grpc
     }
 }
@@ -252,7 +264,9 @@ mod tests {
         let adapter = GrpcConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::Grpc(None))
+            .await;
         assert!(result.is_err());
     }
 
@@ -268,7 +282,9 @@ mod tests {
         let adapter = GrpcConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::Grpc(None))
+            .await;
         assert!(result.is_ok());
         assert_eq!(stream.send_count(), 1);
     }
@@ -289,7 +305,9 @@ mod tests {
         let adapter = GrpcConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::Grpc(None))
+            .await;
         assert!(result.is_ok());
         assert_eq!(buyer_stream.send_count(), 1);
         assert_eq!(seller_stream.send_count(), 1);
@@ -307,7 +325,9 @@ mod tests {
         let adapter = GrpcConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::Grpc(None))
+            .await;
         assert!(result.is_err());
         assert_eq!(stream.send_count(), 0);
     }
@@ -334,7 +354,9 @@ mod tests {
         let adapter = GrpcConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::Grpc(None))
+            .await;
         assert!(result.is_ok()); // At least one succeeded
         assert_eq!(good_stream.send_count(), 1);
         assert_eq!(bad_stream.send_count(), 1);
@@ -369,6 +391,6 @@ mod tests {
     fn channel_returns_grpc() {
         let registry = Arc::new(InMemoryGrpcClientRegistry::new());
         let adapter = GrpcConfirmationAdapter::new(registry);
-        assert_eq!(adapter.channel(), ConfirmationChannel::Grpc);
+        assert_eq!(adapter.channel_type(), ConfirmationChannel::Grpc);
     }
 }

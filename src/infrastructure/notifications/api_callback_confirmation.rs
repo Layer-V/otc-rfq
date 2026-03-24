@@ -4,7 +4,9 @@
 
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
+use crate::domain::value_objects::confirmation::{
+    ConfirmationChannel, NotificationDestination, TradeConfirmation,
+};
 use async_trait::async_trait;
 use reqwest;
 use serde_json;
@@ -13,7 +15,6 @@ use std::time::Duration;
 /// API callback confirmation adapter.
 #[derive(Debug)]
 pub struct ApiCallbackConfirmationAdapter {
-    webhook_url: String,
     client: reqwest::Client,
 }
 
@@ -22,13 +23,12 @@ impl ApiCallbackConfirmationAdapter {
     ///
     /// # Arguments
     ///
-    /// * `webhook_url` - The webhook URL to POST confirmations to
     /// * `timeout` - HTTP request timeout
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    pub fn new(webhook_url: String, timeout: Duration) -> DomainResult<Self> {
+    pub fn new(timeout: Duration) -> DomainResult<Self> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .build()
@@ -37,10 +37,7 @@ impl ApiCallbackConfirmationAdapter {
                 reason: format!("Failed to create HTTP client: {}", e),
             })?;
 
-        Ok(Self {
-            webhook_url,
-            client,
-        })
+        Ok(Self { client })
     }
 
     /// Creates a new adapter with default timeout (10 seconds).
@@ -48,14 +45,28 @@ impl ApiCallbackConfirmationAdapter {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be created.
-    pub fn with_default_timeout(webhook_url: String) -> DomainResult<Self> {
-        Self::new(webhook_url, Duration::from_secs(10))
+    pub fn with_default_timeout() -> DomainResult<Self> {
+        Self::new(Duration::from_secs(10))
     }
 }
 
 #[async_trait]
 impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
-    async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
+    async fn send(
+        &self,
+        confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
+    ) -> DomainResult<()> {
+        // Extract webhook URL from destination
+        let webhook_url = match destination {
+            NotificationDestination::Webhook(url) => url,
+            _ => {
+                return Err(DomainError::InvalidNotificationPreferences {
+                    reason: "Expected Webhook destination".to_string(),
+                });
+            }
+        };
+
         // Serialize confirmation to JSON
         let json_body =
             serde_json::to_string(confirmation).map_err(|e| DomainError::ConfirmationFailed {
@@ -66,7 +77,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
         // Send POST request
         let response = self
             .client
-            .post(&self.webhook_url)
+            .post(webhook_url)
             .header("Content-Type", "application/json")
             .header("User-Agent", "OTC-RFQ-Platform/1.0")
             .body(json_body)
@@ -82,7 +93,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
         if status.is_success() {
             tracing::info!(
                 trade_id = %confirmation.trade_id(),
-                webhook_url = %self.webhook_url,
+                webhook_url = %webhook_url,
                 status = %status,
                 "API callback confirmation sent successfully"
             );
@@ -110,7 +121,7 @@ impl ConfirmationChannelAdapter for ApiCallbackConfirmationAdapter {
         }
     }
 
-    fn channel(&self) -> ConfirmationChannel {
+    fn channel_type(&self) -> ConfirmationChannel {
         ConfirmationChannel::ApiCallback
     }
 }
@@ -141,38 +152,43 @@ mod tests {
 
     #[test]
     fn new_creates_adapter() {
-        let result = ApiCallbackConfirmationAdapter::new(
-            "https://example.com/webhook".to_string(),
-            Duration::from_secs(5),
-        );
+        let result = ApiCallbackConfirmationAdapter::new(Duration::from_secs(5));
         assert!(result.is_ok());
     }
 
     #[test]
     fn with_default_timeout_creates_adapter() {
-        let result = ApiCallbackConfirmationAdapter::with_default_timeout(
-            "https://example.com/webhook".to_string(),
-        );
+        let result = ApiCallbackConfirmationAdapter::with_default_timeout();
         assert!(result.is_ok());
     }
 
     #[test]
     fn channel_returns_api_callback() {
-        let adapter = ApiCallbackConfirmationAdapter::with_default_timeout(
-            "https://example.com/webhook".to_string(),
-        )
-        .unwrap();
-        assert_eq!(adapter.channel(), ConfirmationChannel::ApiCallback);
+        let adapter = ApiCallbackConfirmationAdapter::with_default_timeout().unwrap();
+        assert_eq!(adapter.channel_type(), ConfirmationChannel::ApiCallback);
+    }
+
+    #[tokio::test]
+    async fn send_error_on_invalid_destination() {
+        let adapter = ApiCallbackConfirmationAdapter::with_default_timeout().unwrap();
+        let confirmation = create_test_confirmation();
+        let destination = NotificationDestination::Email("test@example.com");
+
+        let result = adapter.send(&confirmation, destination).await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            DomainError::InvalidNotificationPreferences { .. }
+        ));
     }
 
     #[tokio::test]
     async fn send_invalid_url_fails() {
-        let adapter =
-            ApiCallbackConfirmationAdapter::with_default_timeout("not-a-valid-url".to_string())
-                .unwrap();
+        let adapter = ApiCallbackConfirmationAdapter::with_default_timeout().unwrap();
         let confirmation = create_test_confirmation();
+        let destination = NotificationDestination::Webhook("not-a-valid-url");
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter.send(&confirmation, destination).await;
         assert!(result.is_err());
     }
 

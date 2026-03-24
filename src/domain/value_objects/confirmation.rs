@@ -33,6 +33,23 @@ pub enum ConfirmationChannel {
     Grpc,
 }
 
+/// Targeted destination for a trade confirmation delivery.
+///
+/// This enum allows decoupling the adapters from the full
+/// `NotificationPreferences` struct, ensuring they only receive
+/// the specific routing information they need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationDestination<'a> {
+    /// Email address for email notifications.
+    Email(&'a str),
+    /// Webhook URL for API callback notifications.
+    Webhook(&'a str),
+    /// WebSocket destination (registry-based).
+    WebSocket,
+    /// gRPC destination (registry-based with optional endpoint).
+    Grpc(Option<&'a str>),
+}
+
 impl ConfirmationChannel {
     /// Returns all available confirmation channels.
     #[must_use]

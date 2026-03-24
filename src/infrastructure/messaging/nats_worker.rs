@@ -233,6 +233,7 @@ impl NatsPublisherWorker {
             .await?;
         let entry = format!("[{}] {}\n", subject, payload);
         file.write_all(entry.as_bytes()).await?;
+        file.sync_all().await?;
         Ok(())
     }
 }

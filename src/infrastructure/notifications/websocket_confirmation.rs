@@ -5,7 +5,9 @@
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::services::confirmation_service::ConfirmationChannelAdapter;
 use crate::domain::value_objects::CounterpartyId;
-use crate::domain::value_objects::confirmation::{ConfirmationChannel, TradeConfirmation};
+use crate::domain::value_objects::confirmation::{
+    ConfirmationChannel, NotificationDestination, TradeConfirmation,
+};
 use async_trait::async_trait;
 use serde_json;
 use std::collections::HashMap;
@@ -112,7 +114,17 @@ impl WebSocketConfirmationAdapter {
 
 #[async_trait]
 impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
-    async fn send(&self, confirmation: &TradeConfirmation) -> DomainResult<()> {
+    async fn send(
+        &self,
+        confirmation: &TradeConfirmation,
+        destination: NotificationDestination<'_>,
+    ) -> DomainResult<()> {
+        // Ensure destination is WebSocket
+        if !matches!(destination, NotificationDestination::WebSocket) {
+            return Err(DomainError::InvalidNotificationPreferences {
+                reason: "Expected WebSocket destination".to_string(),
+            });
+        }
         // Serialize confirmation to JSON
         let message =
             serde_json::to_string(confirmation).map_err(|e| DomainError::ConfirmationFailed {
@@ -182,7 +194,7 @@ impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
         }
     }
 
-    fn channel(&self) -> ConfirmationChannel {
+    fn channel_type(&self) -> ConfirmationChannel {
         ConfirmationChannel::WebSocket
     }
 }
@@ -260,7 +272,9 @@ mod tests {
         let adapter = WebSocketConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::WebSocket)
+            .await;
         assert!(result.is_err());
     }
 
@@ -276,7 +290,9 @@ mod tests {
         let adapter = WebSocketConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::WebSocket)
+            .await;
         assert!(result.is_ok());
         assert_eq!(session.send_count(), 1);
     }
@@ -303,7 +319,9 @@ mod tests {
         let adapter = WebSocketConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::WebSocket)
+            .await;
         assert!(result.is_ok());
         assert_eq!(buyer_session.send_count(), 1);
         assert_eq!(seller_session.send_count(), 1);
@@ -321,7 +339,9 @@ mod tests {
         let adapter = WebSocketConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::WebSocket)
+            .await;
         assert!(result.is_err());
         assert_eq!(session.send_count(), 0);
     }
@@ -348,7 +368,9 @@ mod tests {
         let adapter = WebSocketConfirmationAdapter::new(registry);
         let confirmation = create_test_confirmation();
 
-        let result = adapter.send(&confirmation).await;
+        let result = adapter
+            .send(&confirmation, NotificationDestination::WebSocket)
+            .await;
         assert!(result.is_ok()); // At least one succeeded
         assert_eq!(good_session.send_count(), 1);
         assert_eq!(bad_session.send_count(), 1);
