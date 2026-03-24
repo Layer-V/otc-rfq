@@ -199,7 +199,7 @@ pub trait RfqRepository: Send + Sync + fmt::Debug {
     /// Gets an RFQ by ID.
     ///
     /// Returns `None` if the RFQ does not exist.
-    async fn get(&self, id: &RfqId) -> RepositoryResult<Option<Rfq>>;
+    async fn get(&self, id: RfqId) -> RepositoryResult<Option<Rfq>>;
 
     /// Finds all active RFQs.
     ///
@@ -220,7 +220,7 @@ pub trait RfqRepository: Send + Sync + fmt::Debug {
     /// Deletes an RFQ by ID.
     ///
     /// Returns `Ok(true)` if the RFQ was deleted, `Ok(false)` if it didn't exist.
-    async fn delete(&self, id: &RfqId) -> RepositoryResult<bool>;
+    async fn delete(&self, id: RfqId) -> RepositoryResult<bool>;
 
     /// Counts all RFQs.
     async fn count(&self) -> RepositoryResult<u64>;
@@ -262,12 +262,12 @@ pub trait TradeRepository: Send + Sync + fmt::Debug {
     /// Gets a trade by ID.
     ///
     /// Returns `None` if the trade does not exist.
-    async fn get(&self, id: &TradeId) -> RepositoryResult<Option<Trade>>;
+    async fn get(&self, id: TradeId) -> RepositoryResult<Option<Trade>>;
 
     /// Gets a trade by RFQ ID.
     ///
     /// Returns the trade associated with the specified RFQ, if any.
-    async fn get_by_rfq(&self, rfq_id: &RfqId) -> RepositoryResult<Option<Trade>>;
+    async fn get_by_rfq(&self, rfq_id: RfqId) -> RepositoryResult<Option<Trade>>;
 
     /// Finds trades pending settlement.
     ///
@@ -292,7 +292,7 @@ pub trait TradeRepository: Send + Sync + fmt::Debug {
     /// Deletes a trade by ID.
     ///
     /// Returns `Ok(true)` if the trade was deleted, `Ok(false)` if it didn't exist.
-    async fn delete(&self, id: &TradeId) -> RepositoryResult<bool>;
+    async fn delete(&self, id: TradeId) -> RepositoryResult<bool>;
 
     /// Counts all trades.
     async fn count(&self) -> RepositoryResult<u64>;
@@ -526,7 +526,7 @@ pub trait IdentityMappingRepository: Send + Sync + fmt::Debug {
     /// # Security
     ///
     /// Callers must verify they have authorization to access identity data.
-    async fn get(&self, rfq_id: &RfqId) -> RepositoryResult<Option<IdentityMapping>>;
+    async fn get(&self, rfq_id: RfqId) -> RepositoryResult<Option<IdentityMapping>>;
 
     /// Records that identity was revealed to a counterparty.
     ///
@@ -539,7 +539,7 @@ pub trait IdentityMappingRepository: Send + Sync + fmt::Debug {
     /// Returns `RepositoryError::NotFound` if no mapping exists for the RFQ.
     async fn record_reveal(
         &self,
-        rfq_id: &RfqId,
+        rfq_id: RfqId,
         revealed_to: &CounterpartyId,
     ) -> RepositoryResult<()>;
 
@@ -561,7 +561,7 @@ pub trait IdentityMappingRepository: Send + Sync + fmt::Debug {
     ///
     /// Deleting identity mappings may have compliance implications.
     /// Consider soft-delete or archival instead.
-    async fn delete(&self, rfq_id: &RfqId) -> RepositoryResult<bool>;
+    async fn delete(&self, rfq_id: RfqId) -> RepositoryResult<bool>;
 
     /// Counts all identity mappings.
     async fn count(&self) -> RepositoryResult<u64>;
