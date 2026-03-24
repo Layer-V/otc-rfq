@@ -107,9 +107,9 @@ impl RfqRepository for InMemoryRfqRepository {
         Ok(())
     }
 
-    async fn get(&self, id: &RfqId) -> RepositoryResult<Option<Rfq>> {
+    async fn get(&self, id: RfqId) -> RepositoryResult<Option<Rfq>> {
         let storage = self.storage.read().await;
-        Ok(storage.get(id).cloned())
+        Ok(storage.get(&id).cloned())
     }
 
     async fn find_active(&self) -> RepositoryResult<Vec<Rfq>> {
@@ -151,9 +151,9 @@ impl RfqRepository for InMemoryRfqRepository {
         Ok(rfqs)
     }
 
-    async fn delete(&self, id: &RfqId) -> RepositoryResult<bool> {
+    async fn delete(&self, id: RfqId) -> RepositoryResult<bool> {
         let mut storage = self.storage.write().await;
-        Ok(storage.remove(id).is_some())
+        Ok(storage.remove(&id).is_some())
     }
 
     async fn count(&self) -> RepositoryResult<u64> {

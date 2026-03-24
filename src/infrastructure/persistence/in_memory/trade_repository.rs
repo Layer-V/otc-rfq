@@ -83,14 +83,14 @@ impl TradeRepository for InMemoryTradeRepository {
         Ok(())
     }
 
-    async fn get(&self, id: &TradeId) -> RepositoryResult<Option<Trade>> {
+    async fn get(&self, id: TradeId) -> RepositoryResult<Option<Trade>> {
         let storage = self.storage.read().await;
-        Ok(storage.get(id).cloned())
+        Ok(storage.get(&id).cloned())
     }
 
-    async fn get_by_rfq(&self, rfq_id: &RfqId) -> RepositoryResult<Option<Trade>> {
+    async fn get_by_rfq(&self, rfq_id: RfqId) -> RepositoryResult<Option<Trade>> {
         let storage = self.storage.read().await;
-        let trade = storage.values().find(|t| t.rfq_id() == *rfq_id).cloned();
+        let trade = storage.values().find(|t| t.rfq_id() == rfq_id).cloned();
         Ok(trade)
     }
 
@@ -134,9 +134,9 @@ impl TradeRepository for InMemoryTradeRepository {
         Ok(failed)
     }
 
-    async fn delete(&self, id: &TradeId) -> RepositoryResult<bool> {
+    async fn delete(&self, id: TradeId) -> RepositoryResult<bool> {
         let mut storage = self.storage.write().await;
-        Ok(storage.remove(id).is_some())
+        Ok(storage.remove(&id).is_some())
     }
 
     async fn count(&self) -> RepositoryResult<u64> {
