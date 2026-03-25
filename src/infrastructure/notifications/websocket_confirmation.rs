@@ -192,7 +192,7 @@ impl ConfirmationChannelAdapter for WebSocketConfirmationAdapter {
 mod tests {
     use super::*;
     use crate::domain::value_objects::{
-        Blockchain, Price, Quantity, RfqId, SettlementMethod, TradeId,
+        Blockchain, Price, Quantity, RfqId, SettlementMethod, TradeId, TradeParticipant,
     };
     use rust_decimal::Decimal;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -385,7 +385,7 @@ mod tests {
 
         registry.cleanup_disconnected().await;
 
-        let sessions = registry.get_sessions(&CounterpartyId::new("buyer-1"));
+        let sessions = registry.get_sessions(&CounterpartyId::new("buyer-1")).await;
         assert_eq!(sessions.len(), 1);
     }
 }

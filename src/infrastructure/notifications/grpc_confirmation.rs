@@ -184,7 +184,7 @@ impl ConfirmationChannelAdapter for GrpcConfirmationAdapter {
 mod tests {
     use super::*;
     use crate::domain::value_objects::{
-        Blockchain, Price, Quantity, RfqId, SettlementMethod, TradeId,
+        Blockchain, Price, Quantity, RfqId, SettlementMethod, TradeId, TradeParticipant,
     };
     use rust_decimal::Decimal;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -371,7 +371,7 @@ mod tests {
 
         registry.cleanup_inactive().await;
 
-        let streams = registry.get_streams(&CounterpartyId::new("buyer-1"));
+        let streams = registry.get_streams(&CounterpartyId::new("buyer-1")).await;
         assert_eq!(streams.len(), 1);
     }
 
