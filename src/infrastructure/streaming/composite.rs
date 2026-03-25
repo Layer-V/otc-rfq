@@ -184,14 +184,6 @@ impl InstrumentBook {
             _ => None,
         }
     }
-
-    fn active_quotes(&self) -> Vec<StreamingQuote> {
-        self.quotes
-            .values()
-            .filter(|q| !q.is_stale())
-            .cloned()
-            .collect()
-    }
 }
 
 /// Composite streaming quote service that aggregates quotes from all MMs.
@@ -320,6 +312,43 @@ impl CompositeStreamingQuoteService {
             },
         }
     }
+
+    /// Internal helper to calculate best quote from scratch while filtering for registered MMs.
+    fn calculate_best_filtered(&self, book: &InstrumentBook) -> Option<BestQuote> {
+        let mut best_bid: Option<(CounterpartyId, PriceLevel)> = None;
+        let mut best_ask: Option<(CounterpartyId, PriceLevel)> = None;
+
+        for (mm_id, quote) in &book.quotes {
+            if quote.is_stale() || !self.is_mm_registered(mm_id) {
+                continue;
+            }
+
+            match &best_bid {
+                None => best_bid = Some((mm_id.clone(), *quote.bid())),
+                Some((_, current)) => {
+                    if quote.bid().price().get() > current.price().get() {
+                        best_bid = Some((mm_id.clone(), *quote.bid()));
+                    }
+                }
+            }
+
+            match &best_ask {
+                None => best_ask = Some((mm_id.clone(), *quote.ask())),
+                Some((_, current)) => {
+                    if quote.ask().price().get() < current.price().get() {
+                        best_ask = Some((mm_id.clone(), *quote.ask()));
+                    }
+                }
+            }
+        }
+
+        match (best_bid, best_ask) {
+            (Some((bid_mm, bid)), Some((ask_mm, ask))) => {
+                Some(BestQuote::new(bid, bid_mm, ask, ask_mm))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[async_trait]
@@ -355,22 +384,45 @@ impl StreamingQuoteService for CompositeStreamingQuoteService {
     }
 
     fn best_quote(&self, instrument: &Instrument) -> Option<BestQuote> {
-        self.books
-            .get(instrument)
-            .and_then(|book| book.best_quote())
+        self.books.get(instrument).and_then(|book| {
+            let best = book.best_quote()?;
+            // Ensure both MMs are still registered to satisfy the immediate removal contract.
+            if self.is_mm_registered(best.bid_mm()) && self.is_mm_registered(best.ask_mm()) {
+                Some(best)
+            } else {
+                // FALLBACK: The cached best contains an unregistered MM.
+                // Find the next best among currently registered MMs to avoid a "blackout".
+                self.calculate_best_filtered(&book)
+            }
+        })
     }
 
     fn active_quotes(&self, instrument: &Instrument) -> Vec<StreamingQuote> {
         self.books
             .get(instrument)
-            .map(|book| book.active_quotes())
+            .map(|book| {
+                book.quotes
+                    .values()
+                    .filter(|q| !q.is_stale() && self.is_mm_registered(q.mm_id()))
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     fn mm_quote(&self, instrument: &Instrument, mm_id: &CounterpartyId) -> Option<StreamingQuote> {
-        self.books
-            .get(instrument)
-            .and_then(|book| book.quotes.get(mm_id).filter(|q| !q.is_stale()).cloned())
+        if !self.is_mm_registered(mm_id) {
+            return None;
+        }
+
+        self.books.get(instrument).and_then(|book| {
+            let quote = book.quotes.get(mm_id)?;
+            if quote.is_stale() {
+                None
+            } else {
+                Some(quote.clone())
+            }
+        })
     }
 
     fn is_mm_registered(&self, mm_id: &CounterpartyId) -> bool {
@@ -402,11 +454,13 @@ impl StreamingQuoteService for CompositeStreamingQuoteService {
 
     async fn remove_stale_quotes(&self) -> usize {
         let mut total = 0;
-        let registered: std::collections::HashSet<_> = self
-            .registered_mms
-            .iter()
-            .map(|kv| kv.key().clone())
-            .collect();
+        let registered: std::collections::HashSet<_> = {
+            let mut set = std::collections::HashSet::with_capacity(self.registered_mms.len());
+            for kv in self.registered_mms.iter() {
+                set.insert(kv.key().clone());
+            }
+            set
+        };
 
         for mut book in self.books.iter_mut() {
             total += book.remove_stale(&registered);
@@ -423,7 +477,11 @@ impl StreamingQuoteService for CompositeStreamingQuoteService {
     fn active_instruments(&self) -> Vec<Instrument> {
         self.books
             .iter()
-            .filter(|book| book.quotes.values().any(|q| !q.is_stale()))
+            .filter(|book| {
+                book.quotes
+                    .iter()
+                    .any(|(id, q)| !q.is_stale() && self.is_mm_registered(id))
+            })
             .map(|book| book.key().clone())
             .collect()
     }
@@ -431,7 +489,12 @@ impl StreamingQuoteService for CompositeStreamingQuoteService {
     fn total_active_quotes(&self) -> usize {
         self.books
             .iter()
-            .map(|book| book.quotes.values().filter(|q| !q.is_stale()).count())
+            .map(|book| {
+                book.quotes
+                    .iter()
+                    .filter(|(id, q)| !q.is_stale() && self.is_mm_registered(id))
+                    .count()
+            })
             .sum()
     }
 }
@@ -526,11 +589,50 @@ mod tests {
         assert_eq!(service.total_active_quotes(), 1);
         service.unregister_mm(&mm_id);
         assert!(!service.is_mm_registered(&mm_id));
-        // Quotes are still there until background cleanup
-        assert_eq!(service.total_active_quotes(), 1);
 
+        // Contract: Quotes must be removed immediately from public API
+        assert_eq!(service.total_active_quotes(), 0);
+        let instrument = create_test_instrument();
+        assert!(service.best_quote(&instrument).is_none());
+        assert!(service.active_quotes(&instrument).is_empty());
+        assert!(service.mm_quote(&instrument, &mm_id).is_none());
+
+        // Background cleanup will eventually purge the internal book (implementation detail)
         service.remove_stale_quotes().await;
         assert_eq!(service.total_active_quotes(), 0);
+    }
+
+    #[tokio::test]
+    async fn unregister_mm_switches_to_next_best() {
+        let service = CompositeStreamingQuoteService::with_defaults();
+        let mm1 = CounterpartyId::new("mm-1");
+        let mm2 = CounterpartyId::new("mm-2");
+
+        service.register_mm(mm1.clone());
+        service.register_mm(mm2.clone());
+
+        let quote1 = create_test_quote("mm-1", 50000.0, 50020.0); // Best bid 50000
+        let quote2 = create_test_quote("mm-2", 49990.0, 50010.0); // Best ask 50010
+
+        service.receive_quote(quote1).await;
+        service.receive_quote(quote2).await;
+
+        let instrument = create_test_instrument();
+        let best = service.best_quote(&instrument).unwrap();
+        assert_eq!(best.bid_mm(), &mm1);
+        assert_eq!(best.ask_mm(), &mm2);
+
+        // Unregister mm-1 (best bid)
+        service.unregister_mm(&mm1);
+
+        // Should now fall back to mm-2 for BOTH bid and ask (as mm-2 is the only one left)
+        let best_fallback = service.best_quote(&instrument).unwrap();
+        assert_eq!(best_fallback.bid_mm(), &mm2);
+        assert_eq!(best_fallback.ask_mm(), &mm2);
+        assert_eq!(
+            best_fallback.bid().price().get(),
+            Price::new(49990.0).unwrap().get()
+        );
     }
 
     #[tokio::test]
@@ -559,8 +661,9 @@ mod tests {
         assert_eq!(service.total_active_quotes(), 2);
 
         service.unregister_mm(&mm_id);
-        service.remove_stale_quotes().await;
+        assert_eq!(service.total_active_quotes(), 0);
 
+        service.remove_stale_quotes().await;
         assert_eq!(service.total_active_quotes(), 0);
     }
 
