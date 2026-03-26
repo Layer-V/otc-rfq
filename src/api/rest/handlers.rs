@@ -1109,15 +1109,10 @@ fn internal_error(message: &str) -> (StatusCode, Json<ErrorResponse>) {
 pub async fn get_fee_schedule(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<FeeSchedule>, (StatusCode, Json<ErrorResponse>)> {
-    let fee_engine = state.fee_engine.as_ref().ok_or_else(|| {
-        (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(ErrorResponse::new(
-                "NOT_IMPLEMENTED",
-                "Fee engine not configured",
-            )),
-        )
-    })?;
+    let fee_engine = state
+        .fee_engine
+        .as_ref()
+        .ok_or_else(|| not_implemented("fee engine not configured"))?;
 
     Ok(Json(fee_engine.schedule().clone()))
 }
@@ -1135,22 +1130,15 @@ pub async fn get_fee_schedule(
 #[instrument(skip(state))]
 pub async fn get_counterparty_fee_schedule(
     State(state): State<Arc<AppState>>,
-    Path(counterparty_id): Path<String>,
+    Path(_counterparty_id): Path<String>,
 ) -> Result<Json<FeeSchedule>, (StatusCode, Json<ErrorResponse>)> {
-    let fee_engine = state.fee_engine.as_ref().ok_or_else(|| {
-        (
-            StatusCode::NOT_IMPLEMENTED,
-            Json(ErrorResponse::new(
-                "NOT_IMPLEMENTED",
-                "Fee engine not configured",
-            )),
-        )
-    })?;
+    let fee_engine = state
+        .fee_engine
+        .as_ref()
+        .ok_or_else(|| not_implemented("fee engine not configured"))?;
 
     // TODO: Implement override lookup when FeeOverrideProvider is integrated
     // For now, return base schedule
-    let _cp_id = CounterpartyId::new(&counterparty_id);
-
     Ok(Json(fee_engine.schedule().clone()))
 }
 

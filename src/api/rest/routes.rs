@@ -16,8 +16,13 @@
 //! │       └── /            DELETE - Cancel RFQ
 //! ├── /venues              GET  - List venues
 //! │   └── /{id}            PUT  - Update venue config
-//! └── /trades              GET  - List trades
-//!     └── /{id}            GET  - Get trade by ID
+//! ├── /trades              GET  - List trades
+//! │   └── /{id}            GET  - Get trade by ID
+//! ├── /mm-performance      GET  - List MM performance metrics
+//! │   └── /{mm_id}         GET  - Get MM performance by ID
+//! ├── /mm/{mm_id}/incentive-status  GET  - Get MM incentive status
+//! └── /fees/schedule       GET  - Get base fee schedule
+//!     └── /{counterparty_id}  GET  - Get counterparty fee schedule
 //! ```
 //!
 //! # Examples
@@ -483,5 +488,54 @@ mod tests {
 
         // Fee engine is None in test state, so endpoint returns 501 Not Implemented
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    }
+
+    fn create_test_state_with_fee_engine() -> Arc<AppState> {
+        use crate::domain::services::FeeEngine;
+
+        Arc::new(AppState {
+            rfq_repository: Arc::new(MockRfqRepository::default()),
+            venue_repository: Arc::new(MockVenueRepository::default()),
+            trade_repository: Arc::new(MockTradeRepository::default()),
+            mm_performance_tracker: None,
+            mm_incentive_service: None,
+            fee_engine: Some(Arc::new(FeeEngine::default_with_noop())),
+        })
+    }
+
+    #[tokio::test]
+    async fn get_fee_schedule_returns_200_when_engine_enabled() {
+        let state = create_test_state_with_fee_engine();
+        let router = create_test_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/fees/schedule")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn get_counterparty_fee_schedule_returns_200_when_engine_enabled() {
+        let state = create_test_state_with_fee_engine();
+        let router = create_test_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/fees/schedule/client-123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
