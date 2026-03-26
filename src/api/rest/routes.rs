@@ -41,6 +41,7 @@ use crate::api::rest::handlers::{
 };
 use axum::{Router, routing::get, routing::put};
 use std::sync::Arc;
+use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -100,12 +101,26 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     // Main router with middleware
     Router::new()
         .nest("/api/v1", api_v1)
-        .layer(TraceLayer::new_for_http())
         .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
+            ServiceBuilder::new()
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(
+                            tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
+                        )
+                        .on_request(
+                            tower_http::trace::DefaultOnRequest::new().level(tracing::Level::INFO),
+                        )
+                        .on_response(
+                            tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
+                        ),
+                )
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin(Any)
+                        .allow_methods(Any)
+                        .allow_headers(Any),
+                ),
         )
         .with_state(state)
 }
