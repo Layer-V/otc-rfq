@@ -6,6 +6,7 @@
 //! for ranking quotes based on different criteria.
 
 use crate::domain::entities::quote::Quote;
+use crate::domain::entities::quote_normalizer::NormalizedQuote;
 use crate::domain::value_objects::OrderSide;
 use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,45 @@ impl fmt::Display for RankedQuote {
     }
 }
 
+/// A normalized quote with its ranking information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankedNormalizedQuote {
+    /// The normalized quote being ranked.
+    pub normalized_quote: NormalizedQuote,
+    /// The rank (1 = best).
+    pub rank: usize,
+    /// The score used for ranking (higher = better).
+    pub score: f64,
+}
+
+impl RankedNormalizedQuote {
+    /// Creates a new ranked normalized quote.
+    #[must_use]
+    pub fn new(normalized_quote: NormalizedQuote, rank: usize, score: f64) -> Self {
+        Self {
+            normalized_quote,
+            rank,
+            score,
+        }
+    }
+
+    /// Returns true if this quote is the best (rank 1).
+    #[must_use]
+    pub fn is_best(&self) -> bool {
+        self.rank == 1
+    }
+}
+
+impl fmt::Display for RankedNormalizedQuote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "RankedNormalizedQuote(#{} score={:.4} quote={})",
+            self.rank, self.score, self.normalized_quote
+        )
+    }
+}
+
 /// Trait for ranking strategies.
 ///
 /// Implementations define how quotes are scored and ranked based on
@@ -62,6 +102,70 @@ pub trait RankingStrategy: Send + Sync + fmt::Debug {
     ///
     /// A vector of ranked quotes sorted by rank (best first).
     fn rank(&self, quotes: &[Quote], side: OrderSide) -> Vec<RankedQuote>;
+
+    /// Ranks normalized quotes for the specified order side.
+    ///
+    /// This method enables ranking quotes that have been normalized for
+    /// fair multi-venue comparison (FX conversion, fee inclusion, etc.).
+    ///
+    /// # Arguments
+    ///
+    /// * `quotes` - The normalized quotes to rank
+    /// * `side` - The order side (Buy or Sell)
+    ///
+    /// # Returns
+    ///
+    /// A vector of ranked normalized quotes sorted by rank (best first).
+    ///
+    /// # Default Implementation
+    ///
+    /// The default implementation scores each quote using `score_normalized`
+    /// and ranks them by score (higher is better).
+    fn rank_normalized(
+        &self,
+        quotes: &[NormalizedQuote],
+        side: OrderSide,
+    ) -> Vec<RankedNormalizedQuote> {
+        if quotes.is_empty() {
+            return Vec::new();
+        }
+
+        // Score each quote
+        let mut scored: Vec<(usize, f64)> = quotes
+            .iter()
+            .enumerate()
+            .map(|(i, q)| {
+                let score = self.score_normalized(q, side);
+                (i, score)
+            })
+            .collect();
+
+        // Sort by score (descending - higher score is better)
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Create ranked quotes
+        scored
+            .into_iter()
+            .enumerate()
+            .filter_map(|(rank, (idx, score))| {
+                quotes
+                    .get(idx)
+                    .map(|q| RankedNormalizedQuote::new(q.clone(), rank + 1, score))
+            })
+            .collect()
+    }
+
+    /// Scores a normalized quote for ranking.
+    ///
+    /// # Arguments
+    ///
+    /// * `quote` - The normalized quote to score
+    /// * `side` - The order side (Buy or Sell)
+    ///
+    /// # Returns
+    ///
+    /// A score where higher values indicate better quotes.
+    fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64;
 
     /// Returns the name of this ranking strategy.
     fn name(&self) -> &'static str;
@@ -116,6 +220,14 @@ impl RankingStrategy for BestPriceStrategy {
                     .map(|q| RankedQuote::new(q.clone(), rank + 1, score))
             })
             .collect()
+    }
+
+    fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64 {
+        let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
+        match side {
+            OrderSide::Buy => -price, // Lower price is better for buying
+            OrderSide::Sell => price, // Higher price is better for selling
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -218,6 +330,14 @@ impl RankingStrategy for WeightedScoreStrategy {
             .collect()
     }
 
+    fn score_normalized(&self, quote: &NormalizedQuote, _side: OrderSide) -> f64 {
+        // For normalized quotes, use simple weighted score
+        // Price and quantity are already normalized
+        let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
+        let qty = quote.normalized_quantity().get().to_f64().unwrap_or(0.0);
+        self.price_weight * price + self.quantity_weight * qty
+    }
+
     fn name(&self) -> &'static str {
         "WeightedScore"
     }
@@ -287,6 +407,13 @@ impl RankingStrategy for LowestSlippageStrategy {
                     .map(|q| RankedQuote::new(q.clone(), rank + 1, score))
             })
             .collect()
+    }
+
+    fn score_normalized(&self, quote: &NormalizedQuote, _side: OrderSide) -> f64 {
+        // For normalized quotes, assume minimal slippage since they're already normalized
+        // Use all_in_price for scoring
+        let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
+        1.0 / (1.0 + price)
     }
 
     fn name(&self) -> &'static str {
@@ -402,6 +529,17 @@ impl RankingStrategy for LowestCostStrategy {
                     .map(|q| RankedQuote::new(q.clone(), rank + 1, score))
             })
             .collect()
+    }
+
+    fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64 {
+        // For normalized quotes, all_in_price already includes fees
+        let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
+        let quantity = quote.normalized_quantity().get().to_f64().unwrap_or(0.0);
+        let total_cost = price * quantity;
+        match side {
+            OrderSide::Buy => -total_cost, // Lower cost is better
+            OrderSide::Sell => total_cost, // Higher revenue is better
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -645,6 +783,26 @@ impl RankingStrategy for WeightedMultiFactorStrategy {
             .collect()
     }
 
+    fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64 {
+        let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
+        let qty = quote.normalized_quantity().get().to_f64().unwrap_or(0.0);
+        let ts = quote.adjusted_timestamp().timestamp_millis();
+
+        // Simple scoring for normalized quotes
+        let price_score = match side {
+            OrderSide::Buy => 1.0 / (1.0 + price),
+            OrderSide::Sell => price,
+        };
+        let qty_score = self.quantity_score(qty);
+        let reliability = self.reliability_score(quote.venue_id().as_str());
+        let freshness = 1.0 - (ts as f64 / 1000000000.0).fract();
+
+        self.weights.price * price_score
+            + self.weights.quantity * qty_score
+            + self.weights.reliability * reliability
+            + self.weights.freshness * freshness
+    }
+
     fn name(&self) -> &'static str {
         "WeightedMultiFactor"
     }
@@ -724,6 +882,26 @@ impl RankingStrategy for CompositeStrategy {
                     .map(|q| RankedQuote::new(q.clone(), rank + 1, score))
             })
             .collect()
+    }
+
+    fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64 {
+        if self.strategies.is_empty() {
+            return 0.0;
+        }
+
+        let mut total_score = 0.0;
+        let mut total_weight = 0.0;
+
+        for (strategy, weight) in &self.strategies {
+            total_score += strategy.score_normalized(quote, side) * weight;
+            total_weight += weight;
+        }
+
+        if total_weight > 0.0 {
+            total_score / total_weight
+        } else {
+            0.0
+        }
     }
 
     fn name(&self) -> &'static str {
