@@ -400,6 +400,7 @@ impl<E: LegExecutor> MultiLegExecutor<E> {
                             leg.instrument().symbol().to_string(),
                             e.to_string(),
                             events,
+                            started_at,
                         )
                         .await;
                 }
@@ -427,21 +428,30 @@ impl<E: LegExecutor> MultiLegExecutor<E> {
     }
 
     /// Handles a leg execution failure by rolling back all executed legs.
+    ///
+    /// Returns `Ok(MultiLegExecutionResult)` with state `RolledBack` or `PartialFailure`.
+    /// Events are always preserved in the result for audit trail.
+    #[allow(clippy::too_many_arguments)]
     async fn handle_failure(
         &self,
         execution_id: MultiLegExecutionId,
         executed_legs: &[LegExecutionResult],
-        failed_leg_index: usize,
-        failed_leg_instrument: String,
+        _failed_leg_index: usize,
+        _failed_leg_instrument: String,
         failure_reason: String,
         mut events: Vec<MultiLegExecutionEvent>,
+        started_at: Timestamp,
     ) -> DomainResult<MultiLegExecutionResult> {
         if executed_legs.is_empty() {
-            return Err(DomainError::MultiLegExecutionFailed {
-                failed_leg_index,
-                failed_leg_instrument,
-                reason: failure_reason,
-                rolled_back_count: 0,
+            // No legs to roll back - return result with RolledBack state
+            return Ok(MultiLegExecutionResult {
+                execution_id,
+                legs: Vec::new(),
+                net_price: Decimal::ZERO,
+                state: MultiLegExecutionState::RolledBack,
+                started_at,
+                completed_at: Timestamp::now(),
+                events,
             });
         }
 
@@ -458,11 +468,15 @@ impl<E: LegExecutor> MultiLegExecutor<E> {
                     MultiLegRollbackCompleted::new(execution_id.clone(), rolled_back_count);
                 events.push(rollback_complete.into());
 
-                Err(DomainError::MultiLegExecutionFailed {
-                    failed_leg_index,
-                    failed_leg_instrument,
-                    reason: failure_reason,
-                    rolled_back_count,
+                // Successful rollback - return Ok with RolledBack state
+                Ok(MultiLegExecutionResult {
+                    execution_id,
+                    legs: executed_legs.to_vec(),
+                    net_price: Decimal::ZERO,
+                    state: MultiLegExecutionState::RolledBack,
+                    started_at,
+                    completed_at: Timestamp::now(),
+                    events,
                 })
             }
             Err(rollback_error) => {
@@ -476,7 +490,7 @@ impl<E: LegExecutor> MultiLegExecutor<E> {
                 };
 
                 let partial_failure = MultiLegPartialFailure::new(
-                    execution_id,
+                    execution_id.clone(),
                     executed_legs.len(),
                     partially_rolled_back,
                     executed_legs.len() - partially_rolled_back,
@@ -485,10 +499,19 @@ impl<E: LegExecutor> MultiLegExecutor<E> {
                 );
                 events.push(partial_failure.into());
 
-                Err(DomainError::RollbackFailed {
-                    original_failure: failure_reason,
-                    rollback_failure: rollback_error.to_string(),
-                    partially_rolled_back,
+                // Partial rollback failure - return Ok with PartialFailure state
+                Ok(MultiLegExecutionResult {
+                    execution_id,
+                    legs: executed_legs.to_vec(),
+                    net_price: Decimal::ZERO,
+                    state: MultiLegExecutionState::PartialFailure {
+                        executed: executed_legs.len(),
+                        rolled_back: partially_rolled_back,
+                        failed_rollback: executed_legs.len() - partially_rolled_back,
+                    },
+                    started_at,
+                    completed_at: Timestamp::now(),
+                    events,
                 })
             }
         }
@@ -708,18 +731,11 @@ mod tests {
 
         let result = multi_leg.execute(&package_quote).await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainError::MultiLegExecutionFailed {
-                failed_leg_index,
-                rolled_back_count,
-                ..
-            } => {
-                assert_eq!(failed_leg_index, 0);
-                assert_eq!(rolled_back_count, 0);
-            }
-            e => panic!("Unexpected error: {:?}", e),
-        }
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert_eq!(execution.state, MultiLegExecutionState::RolledBack);
+        assert!(execution.legs.is_empty());
+        assert!(!execution.events.is_empty());
     }
 
     #[tokio::test]
@@ -731,18 +747,11 @@ mod tests {
 
         let result = multi_leg.execute(&package_quote).await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainError::MultiLegExecutionFailed {
-                failed_leg_index,
-                rolled_back_count,
-                ..
-            } => {
-                assert_eq!(failed_leg_index, 1);
-                assert_eq!(rolled_back_count, 1);
-            }
-            e => panic!("Unexpected error: {:?}", e),
-        }
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert_eq!(execution.state, MultiLegExecutionState::RolledBack);
+        assert_eq!(execution.legs.len(), 1);
+        assert!(!execution.events.is_empty());
         assert_eq!(executor.executed_count(), 1);
         assert_eq!(executor.compensated_count(), 1);
     }
@@ -756,18 +765,11 @@ mod tests {
 
         let result = multi_leg.execute(&package_quote).await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainError::MultiLegExecutionFailed {
-                failed_leg_index,
-                rolled_back_count,
-                ..
-            } => {
-                assert_eq!(failed_leg_index, 2);
-                assert_eq!(rolled_back_count, 2);
-            }
-            e => panic!("Unexpected error: {:?}", e),
-        }
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert_eq!(execution.state, MultiLegExecutionState::RolledBack);
+        assert_eq!(execution.legs.len(), 2);
+        assert!(!execution.events.is_empty());
         assert_eq!(executor.executed_count(), 2);
         assert_eq!(executor.compensated_count(), 2);
     }
@@ -781,16 +783,21 @@ mod tests {
 
         let result = multi_leg.execute(&package_quote).await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainError::RollbackFailed {
-                partially_rolled_back,
-                ..
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        match execution.state {
+            MultiLegExecutionState::PartialFailure {
+                executed,
+                rolled_back,
+                failed_rollback,
             } => {
-                assert_eq!(partially_rolled_back, 0);
+                assert_eq!(executed, 2);
+                assert_eq!(rolled_back, 0);
+                assert_eq!(failed_rollback, 2);
             }
-            e => panic!("Unexpected error: {:?}", e),
+            _ => panic!("Expected PartialFailure state"),
         }
+        assert!(!execution.events.is_empty());
     }
 
     #[tokio::test]
@@ -816,18 +823,63 @@ mod tests {
 
         let result = multi_leg.execute(&package_quote).await;
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            DomainError::MultiLegExecutionFailed {
-                failed_leg_index,
-                rolled_back_count,
-                ..
-            } => {
-                assert_eq!(failed_leg_index, 0);
-                assert_eq!(rolled_back_count, 0);
-            }
-            e => panic!("Unexpected error: {:?}", e),
-        }
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert_eq!(execution.state, MultiLegExecutionState::RolledBack);
+        assert!(execution.legs.is_empty());
+        assert!(!execution.events.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_events_preserved_on_failure_paths() {
+        // Test 1: Events preserved when first leg fails (no rollback needed)
+        let executor = MockLegExecutor::new().fail_at(0);
+        let multi_leg =
+            MultiLegExecutor::new(MultiLegExecutorConfig::for_testing(), Arc::new(executor));
+        let package_quote = create_test_package_quote(3);
+
+        let result = multi_leg.execute(&package_quote).await;
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert!(!execution.events.is_empty());
+        assert!(matches!(
+            execution.events[0],
+            MultiLegExecutionEvent::Started(_)
+        ));
+        assert!(matches!(
+            execution.events[1],
+            MultiLegExecutionEvent::LegFailed(_)
+        ));
+
+        // Test 2: Events preserved when middle leg fails with successful rollback
+        let executor = Arc::new(MockLegExecutor::new().fail_at(1));
+        let multi_leg =
+            MultiLegExecutor::new(MultiLegExecutorConfig::for_testing(), Arc::clone(&executor));
+        let package_quote = create_test_package_quote(3);
+
+        let result = multi_leg.execute(&package_quote).await;
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert!(!execution.events.is_empty());
+        // Should have: Started, LegExecuted, LegFailed, RollbackStarted, RollbackCompleted
+        assert!(execution.events.len() >= 5);
+
+        // Test 3: Events preserved when rollback fails (partial failure)
+        let executor = Arc::new(MockLegExecutor::new().fail_at(2).fail_compensating());
+        let multi_leg =
+            MultiLegExecutor::new(MultiLegExecutorConfig::for_testing(), Arc::clone(&executor));
+        let package_quote = create_test_package_quote(3);
+
+        let result = multi_leg.execute(&package_quote).await;
+        assert!(result.is_ok());
+        let execution = result.unwrap();
+        assert!(!execution.events.is_empty());
+        // Should have: Started, LegExecuted x2, LegFailed, RollbackStarted, PartialFailure
+        assert!(execution.events.len() >= 5);
+        assert!(matches!(
+            execution.events.last().unwrap(),
+            MultiLegExecutionEvent::PartialFailure(_)
+        ));
     }
 
     #[test]
