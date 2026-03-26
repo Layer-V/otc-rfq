@@ -256,15 +256,23 @@ impl CompositeStreamingQuoteService {
     }
 
     async fn record_stats(&self, mm_id: &CounterpartyId, result: &StreamingQuoteResult) {
-        // Centralized result logging
+        // Centralized result logging with structured fields
         match result {
-            StreamingQuoteResult::Accepted { is_best, .. } => {
+            StreamingQuoteResult::Accepted { is_best, quote_id } => {
                 if *is_best {
-                    info!("New best quote from MM");
+                    info!(
+                        mm_id = %mm_id,
+                        quote_id = %quote_id,
+                        "New best quote from MM"
+                    );
                 }
             }
             StreamingQuoteResult::Rejected { reason } => {
-                warn!(reason = %reason, "Quote rejected");
+                warn!(
+                    mm_id = %mm_id,
+                    reason = %reason,
+                    "Quote rejected"
+                );
             }
         }
 
@@ -335,7 +343,6 @@ impl CompositeStreamingQuoteService {
 
 #[async_trait]
 impl StreamingQuoteService for CompositeStreamingQuoteService {
-    #[instrument(skip(self, quote), fields(mm_id = %quote.mm_id(), instrument = %quote.instrument()))]
     async fn receive_quote(&self, quote: StreamingQuote) -> StreamingQuoteResult {
         let mm_id = quote.mm_id().clone();
         let quote_id = quote.id();
