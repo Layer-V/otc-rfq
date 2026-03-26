@@ -225,8 +225,8 @@ impl RankingStrategy for BestPriceStrategy {
     fn score_normalized(&self, quote: &NormalizedQuote, side: OrderSide) -> f64 {
         let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
         match side {
-            OrderSide::Buy => -price,  // Lower price is better for buying
-            OrderSide::Sell => price,  // Higher price is better for selling
+            OrderSide::Buy => -price, // Lower price is better for buying
+            OrderSide::Sell => price, // Higher price is better for selling
         }
     }
 
@@ -537,8 +537,8 @@ impl RankingStrategy for LowestCostStrategy {
         let quantity = quote.normalized_quantity().get().to_f64().unwrap_or(0.0);
         let total_cost = price * quantity;
         match side {
-            OrderSide::Buy => -total_cost,  // Lower cost is better
-            OrderSide::Sell => total_cost,  // Higher revenue is better
+            OrderSide::Buy => -total_cost, // Lower cost is better
+            OrderSide::Sell => total_cost, // Higher revenue is better
         }
     }
 
@@ -787,7 +787,7 @@ impl RankingStrategy for WeightedMultiFactorStrategy {
         let price = quote.all_in_price().get().to_f64().unwrap_or(0.0);
         let qty = quote.normalized_quantity().get().to_f64().unwrap_or(0.0);
         let ts = quote.adjusted_timestamp().timestamp_millis();
-        
+
         // Simple scoring for normalized quotes
         let price_score = match side {
             OrderSide::Buy => 1.0 / (1.0 + price),
@@ -796,7 +796,7 @@ impl RankingStrategy for WeightedMultiFactorStrategy {
         let qty_score = self.quantity_score(qty);
         let reliability = self.reliability_score(quote.venue_id().as_str());
         let freshness = 1.0 - (ts as f64 / 1000000000.0).fract();
-        
+
         self.weights.price * price_score
             + self.weights.quantity * qty_score
             + self.weights.reliability * reliability
@@ -888,15 +888,15 @@ impl RankingStrategy for CompositeStrategy {
         if self.strategies.is_empty() {
             return 0.0;
         }
-        
+
         let mut total_score = 0.0;
         let mut total_weight = 0.0;
-        
+
         for (strategy, weight) in &self.strategies {
             total_score += strategy.score_normalized(quote, side) * weight;
             total_weight += weight;
         }
-        
+
         if total_weight > 0.0 {
             total_score / total_weight
         } else {

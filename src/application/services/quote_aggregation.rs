@@ -6,7 +6,9 @@
 //! concurrent quote collection from multiple venues and applies ranking
 //! strategies to the results.
 
-use crate::application::services::ranking_strategy::{RankedNormalizedQuote, RankedQuote, RankingStrategy};
+use crate::application::services::ranking_strategy::{
+    RankedNormalizedQuote, RankedQuote, RankingStrategy,
+};
 use crate::application::use_cases::collect_quotes::VenueRegistry;
 use crate::domain::entities::quote::Quote;
 use crate::domain::entities::quote_normalizer::{NormalizedQuote, QuoteType};
@@ -110,7 +112,9 @@ impl AggregationResult {
     pub fn has_sufficient_quotes(&self, min_quotes: usize) -> bool {
         match self {
             AggregationResult::Raw { ranked_quotes, .. } => ranked_quotes.len() >= min_quotes,
-            AggregationResult::Normalized { ranked_quotes, .. } => ranked_quotes.len() >= min_quotes,
+            AggregationResult::Normalized { ranked_quotes, .. } => {
+                ranked_quotes.len() >= min_quotes
+            }
         }
     }
 
@@ -127,8 +131,12 @@ impl AggregationResult {
     #[must_use]
     pub fn total_collected(&self) -> usize {
         match self {
-            AggregationResult::Raw { total_collected, .. } => *total_collected,
-            AggregationResult::Normalized { total_collected, .. } => *total_collected,
+            AggregationResult::Raw {
+                total_collected, ..
+            } => *total_collected,
+            AggregationResult::Normalized {
+                total_collected, ..
+            } => *total_collected,
         }
     }
 
@@ -583,14 +591,15 @@ mod tests {
         let agg_result = result.unwrap();
         assert_eq!(agg_result.quote_count(), 3);
         assert_eq!(agg_result.venues_queried(), 3);
-        
+
         // Best quote should be lowest price for buy side
+        #[allow(clippy::indexing_slicing)]
         if let AggregationResult::Raw { ranked_quotes, .. } = agg_result {
             assert_eq!(ranked_quotes.len(), 3);
             let best = &ranked_quotes[0];
             assert!((best.quote.price().get().to_f64().unwrap() - 95.0).abs() < f64::EPSILON);
         } else {
-            panic!("Expected Raw variant");
+            unreachable!("Expected Raw variant since no normalizer was configured");
         }
     }
 
