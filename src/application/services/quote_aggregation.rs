@@ -6,9 +6,10 @@
 //! concurrent quote collection from multiple venues and applies ranking
 //! strategies to the results.
 
-use crate::application::services::ranking_strategy::{RankedQuote, RankingStrategy};
+use crate::application::services::ranking_strategy::{RankedNormalizedQuote, RankedQuote, RankingStrategy};
 use crate::application::use_cases::collect_quotes::VenueRegistry;
 use crate::domain::entities::quote::Quote;
+use crate::domain::entities::quote_normalizer::{NormalizedQuote, QuoteType};
 use crate::domain::entities::rfq::Rfq;
 use crate::infrastructure::venues::error::VenueError;
 use std::fmt;
@@ -73,31 +74,71 @@ impl AggregationConfig {
 }
 
 /// Result of quote aggregation.
-#[derive(Debug)]
-pub struct AggregationResult {
-    /// Ranked quotes (best first).
-    pub ranked_quotes: Vec<RankedQuote>,
-    /// Total quotes collected before filtering.
-    pub total_collected: usize,
-    /// Number of venues queried.
-    pub venues_queried: usize,
-    /// Number of venues that responded.
-    pub venues_responded: usize,
-    /// Number of quotes filtered out (expired, invalid).
-    pub filtered_count: usize,
+#[derive(Debug, Clone)]
+pub enum AggregationResult {
+    /// Raw quotes without normalization.
+    Raw {
+        /// Ranked quotes (best first).
+        ranked_quotes: Vec<RankedQuote>,
+        /// Total quotes collected before filtering.
+        total_collected: usize,
+        /// Number of venues queried.
+        venues_queried: usize,
+        /// Number of venues that responded.
+        venues_responded: usize,
+        /// Number of quotes filtered out (expired, invalid).
+        filtered_count: usize,
+    },
+    /// Normalized quotes with FX conversion and fee inclusion.
+    Normalized {
+        /// Ranked normalized quotes (best first).
+        ranked_quotes: Vec<RankedNormalizedQuote>,
+        /// Total quotes collected before filtering.
+        total_collected: usize,
+        /// Number of venues queried.
+        venues_queried: usize,
+        /// Number of venues that responded.
+        venues_responded: usize,
+        /// Number of quotes filtered out (expired, invalid).
+        filtered_count: usize,
+    },
 }
 
 impl AggregationResult {
     /// Returns true if the minimum quotes requirement was met.
     #[must_use]
     pub fn has_sufficient_quotes(&self, min_quotes: usize) -> bool {
-        self.ranked_quotes.len() >= min_quotes
+        match self {
+            AggregationResult::Raw { ranked_quotes, .. } => ranked_quotes.len() >= min_quotes,
+            AggregationResult::Normalized { ranked_quotes, .. } => ranked_quotes.len() >= min_quotes,
+        }
     }
 
-    /// Returns the best quote, if any.
+    /// Returns the number of ranked quotes.
     #[must_use]
-    pub fn best_quote(&self) -> Option<&RankedQuote> {
-        self.ranked_quotes.first()
+    pub fn quote_count(&self) -> usize {
+        match self {
+            AggregationResult::Raw { ranked_quotes, .. } => ranked_quotes.len(),
+            AggregationResult::Normalized { ranked_quotes, .. } => ranked_quotes.len(),
+        }
+    }
+
+    /// Returns the total number of quotes collected.
+    #[must_use]
+    pub fn total_collected(&self) -> usize {
+        match self {
+            AggregationResult::Raw { total_collected, .. } => *total_collected,
+            AggregationResult::Normalized { total_collected, .. } => *total_collected,
+        }
+    }
+
+    /// Returns the number of venues queried.
+    #[must_use]
+    pub fn venues_queried(&self) -> usize {
+        match self {
+            AggregationResult::Raw { venues_queried, .. } => *venues_queried,
+            AggregationResult::Normalized { venues_queried, .. } => *venues_queried,
+        }
     }
 }
 
@@ -258,37 +299,63 @@ impl QuoteAggregationEngine {
             });
         }
 
-        // Normalize quotes if normalizer is configured
-        let quotes_to_rank = if let Some(normalizer) = &self.quote_normalizer {
-            use crate::domain::entities::quote_normalizer::QuoteType;
-
-            valid_quotes
+        // Normalize and rank quotes if normalizer is configured
+        if let Some(normalizer) = &self.quote_normalizer {
+            // Normalize quotes
+            let normalized_quotes: Vec<NormalizedQuote> = valid_quotes
                 .iter()
                 .map(|q| {
-                    // Normalize with QuoteType::Firm (default for aggregation)
-                    let normalized = normalizer.normalize(q, QuoteType::Firm, None);
-                    normalized.to_quote()
+                    // Derive QuoteType from last_look_required to preserve semantics
+                    let quote_type = if q.last_look_required() {
+                        QuoteType::LastLook
+                    } else {
+                        QuoteType::Firm
+                    };
+
+                    // Extract source currency from metadata for FX conversion
+                    let source_currency = q
+                        .metadata()
+                        .and_then(|m| m.get("currency"))
+                        .map(|s| s.as_str());
+
+                    normalizer.normalize(q, quote_type, source_currency)
                 })
-                .collect()
+                .collect();
+
+            // Rank normalized quotes
+            let mut ranked_quotes = self
+                .ranking_strategy
+                .rank_normalized(&normalized_quotes, rfq.side());
+
+            // Apply max quotes limit
+            if let Some(max) = self.config.max_quotes {
+                ranked_quotes.truncate(max);
+            }
+
+            Ok(AggregationResult::Normalized {
+                ranked_quotes,
+                total_collected,
+                venues_queried,
+                venues_responded,
+                filtered_count,
+            })
         } else {
-            valid_quotes
-        };
+            // Rank raw quotes without normalization
+            let mut ranked_quotes = self.ranking_strategy.rank(&valid_quotes, rfq.side());
 
-        // Rank quotes
-        let mut ranked_quotes = self.ranking_strategy.rank(&quotes_to_rank, rfq.side());
+            // Apply max quotes limit
+            if let Some(max) = self.config.max_quotes {
+                ranked_quotes.truncate(max);
+            }
 
-        // Apply max quotes limit
-        if let Some(max) = self.config.max_quotes {
-            ranked_quotes.truncate(max);
+            Ok(AggregationResult::Raw {
+                ranked_quotes,
+                total_collected,
+                venues_queried,
+                venues_responded,
+                filtered_count,
+            })
         }
-
-        Ok(AggregationResult {
-            ranked_quotes,
-            total_collected,
-            venues_queried,
-            venues_responded,
-            filtered_count,
-        })
     }
 
     /// Collects quotes from all venues concurrently.
@@ -514,13 +581,17 @@ mod tests {
         assert!(result.is_ok());
 
         let agg_result = result.unwrap();
-        assert_eq!(agg_result.ranked_quotes.len(), 3);
-        assert_eq!(agg_result.venues_queried, 3);
-        assert!(agg_result.best_quote().is_some());
-
+        assert_eq!(agg_result.quote_count(), 3);
+        assert_eq!(agg_result.venues_queried(), 3);
+        
         // Best quote should be lowest price for buy side
-        let best = agg_result.best_quote().unwrap();
-        assert!((best.quote.price().get().to_f64().unwrap() - 95.0).abs() < f64::EPSILON);
+        if let AggregationResult::Raw { ranked_quotes, .. } = agg_result {
+            assert_eq!(ranked_quotes.len(), 3);
+            let best = &ranked_quotes[0];
+            assert!((best.quote.price().get().to_f64().unwrap() - 95.0).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected Raw variant");
+        }
     }
 
     #[tokio::test]
@@ -576,7 +647,7 @@ mod tests {
         assert!(result.is_ok());
 
         let agg_result = result.unwrap();
-        assert_eq!(agg_result.ranked_quotes.len(), 1);
+        assert_eq!(agg_result.quote_count(), 1);
     }
 
     #[tokio::test]
@@ -617,7 +688,7 @@ mod tests {
         assert!(result.is_ok());
 
         let agg_result = result.unwrap();
-        assert_eq!(agg_result.ranked_quotes.len(), 2);
+        assert_eq!(agg_result.quote_count(), 2);
     }
 
     #[test]
@@ -659,7 +730,7 @@ mod tests {
 
     #[test]
     fn aggregation_result_has_sufficient_quotes() {
-        let result = AggregationResult {
+        let result = AggregationResult::Raw {
             ranked_quotes: vec![],
             total_collected: 0,
             venues_queried: 2,
