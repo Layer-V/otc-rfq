@@ -246,6 +246,7 @@ impl DomainEvent for LockAcquisitionFailed {
 
 /// Enum representing all atomic execution events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum AtomicExecutionEvent {
     /// Locks were acquired.
     LocksAcquired(LocksAcquired),
