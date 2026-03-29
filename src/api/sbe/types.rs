@@ -222,8 +222,181 @@ fn var_string_size(s: &str) -> usize {
 }
 
 // ============================================================================
-// Simple Request Types (no variable fields or minimal)
+// Request Types
 // ============================================================================
+
+/// CreateRfqRequest - Create a new RFQ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateRfqRequest {
+    /// Request correlation ID.
+    pub request_id: Uuid,
+    /// Client identifier.
+    pub client_id: String,
+    /// Trading symbol.
+    pub symbol: String,
+    /// Base asset.
+    pub base_asset: String,
+    /// Quote asset.
+    pub quote_asset: String,
+    /// Order side.
+    pub side: OrderSide,
+    /// Requested quantity.
+    pub quantity: Quantity,
+    /// RFQ timeout in seconds.
+    pub timeout_seconds: i64,
+    /// Asset class.
+    pub asset_class: AssetClass,
+}
+
+impl CreateRfqRequest {
+    /// Block length for CreateRfqRequest (fixed fields only).
+    pub const BLOCK_LENGTH: u16 = 35;
+}
+
+impl SbeEncode for CreateRfqRequest {
+    fn encoded_size(&self) -> usize {
+        MESSAGE_HEADER_SIZE
+            + Self::BLOCK_LENGTH as usize
+            + var_string_size(&self.client_id)
+            + var_string_size(&self.symbol)
+            + var_string_size(&self.base_asset)
+            + var_string_size(&self.quote_asset)
+    }
+
+    fn encode(&self, buffer: &mut [u8]) -> SbeResult<usize> {
+        let size = self.encoded_size();
+        if buffer.len() < size {
+            return Err(SbeError::BufferTooSmall {
+                needed: size,
+                available: buffer.len(),
+            });
+        }
+
+        let mut offset: usize = 0;
+
+        // Header
+        encode_header(buffer, Self::BLOCK_LENGTH, CREATE_RFQ_REQUEST_TEMPLATE_ID)?;
+        offset = offset.checked_add(MESSAGE_HEADER_SIZE)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // requestId
+        let request_uuid = SbeUuid::from_uuid(self.request_id);
+        request_uuid.encode(&mut buffer[offset..])?;
+        offset = offset.checked_add(SbeUuid::SIZE)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // side
+        buffer[offset] = encode_order_side(self.side);
+        offset = offset.checked_add(1)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // quantity
+        let qty_decimal = SbeDecimal::from_decimal(self.quantity.get());
+        qty_decimal.encode(&mut buffer[offset..])?;
+        offset = offset.checked_add(SbeDecimal::SIZE)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // timeoutSeconds
+        buffer[offset..offset.checked_add(8).ok_or_else(|| SbeError::Overflow)?]
+            .copy_from_slice(&self.timeout_seconds.to_le_bytes());
+        offset = offset.checked_add(8)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // assetClass
+        buffer[offset] = encode_asset_class(self.asset_class);
+        offset = offset.checked_add(1)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        // Variable fields
+        let client_size = encode_var_string(&self.client_id, &mut buffer[offset..])?;
+        offset = offset.checked_add(client_size)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        let symbol_size = encode_var_string(&self.symbol, &mut buffer[offset..])?;
+        offset = offset.checked_add(symbol_size)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        let base_size = encode_var_string(&self.base_asset, &mut buffer[offset..])?;
+        offset = offset.checked_add(base_size)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        let quote_size = encode_var_string(&self.quote_asset, &mut buffer[offset..])?;
+        offset = offset.checked_add(quote_size)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: size, available: buffer.len() })?;
+
+        Ok(offset)
+    }
+}
+
+impl SbeDecode for CreateRfqRequest {
+    fn decode(buffer: &[u8]) -> SbeResult<Self> {
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+
+        if template_id != CREATE_RFQ_REQUEST_TEMPLATE_ID {
+            return Err(SbeError::UnknownTemplateId(template_id));
+        }
+
+        let mut offset: usize = MESSAGE_HEADER_SIZE;
+
+        // requestId
+        let request_uuid = SbeUuid::decode(&buffer[offset..])?;
+        offset = offset.checked_add(SbeUuid::SIZE)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        // side
+        let side = decode_order_side(buffer[offset])?;
+        offset = offset.checked_add(1)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        // quantity
+        let qty_sbe = SbeDecimal::decode(&buffer[offset..])?;
+        let qty_decimal = qty_sbe.to_decimal()?;
+        let quantity = Quantity::from_decimal(qty_decimal)
+            .map_err(|e| SbeError::InvalidFieldValue(format!("invalid quantity: {}", e)))?;
+        offset = offset.checked_add(SbeDecimal::SIZE)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        // timeoutSeconds
+        let timeout_bytes = buffer.get(offset..offset.checked_add(8).ok_or_else(|| SbeError::Overflow)?)
+            .ok_or_else(|| SbeError::BufferTooSmall { needed: offset + 8, available: buffer.len() })?;
+        let timeout_seconds = i64::from_le_bytes(timeout_bytes.try_into()
+            .map_err(|_| SbeError::InvalidFieldValue("invalid timeout".to_string()))?);
+        offset = offset.checked_add(8)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        // assetClass
+        let asset_class = decode_asset_class(buffer[offset])?;
+        offset = offset.checked_add(1)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        // Variable fields
+        let (client_id, client_size) = decode_var_string(&buffer[offset..])?;
+        offset = offset.checked_add(client_size)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        let (symbol, symbol_size) = decode_var_string(&buffer[offset..])?;
+        offset = offset.checked_add(symbol_size)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        let (base_asset, base_size) = decode_var_string(&buffer[offset..])?;
+        offset = offset.checked_add(base_size)
+            .ok_or_else(|| SbeError::Overflow)?;
+
+        let (quote_asset, _quote_size) = decode_var_string(&buffer[offset..])?;
+
+        Ok(Self {
+            request_id: request_uuid.to_uuid(),
+            client_id,
+            symbol,
+            base_asset,
+            quote_asset,
+            side,
+            quantity,
+            timeout_seconds,
+            asset_class,
+        })
+    }
+}
 
 /// GetRfqRequest - Retrieve an RFQ by ID.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,7 +419,6 @@ impl GetRfqRequest {
 }
 
 impl SbeEncode for GetRfqRequest {
-    #[must_use]
     fn encoded_size(&self) -> usize {
         MESSAGE_HEADER_SIZE + Self::BLOCK_LENGTH as usize
     }
@@ -285,7 +457,7 @@ impl SbeEncode for GetRfqRequest {
 
 impl SbeDecode for GetRfqRequest {
     fn decode(buffer: &[u8]) -> SbeResult<Self> {
-        let (block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
 
         if template_id != GET_RFQ_REQUEST_TEMPLATE_ID {
             return Err(SbeError::UnknownTemplateId(template_id));
@@ -331,7 +503,6 @@ impl ExecuteTradeRequest {
 }
 
 impl SbeEncode for ExecuteTradeRequest {
-    #[must_use]
     fn encoded_size(&self) -> usize {
         MESSAGE_HEADER_SIZE + Self::BLOCK_LENGTH as usize
     }
@@ -370,7 +541,7 @@ impl SbeEncode for ExecuteTradeRequest {
 
 impl SbeDecode for ExecuteTradeRequest {
     fn decode(buffer: &[u8]) -> SbeResult<Self> {
-        let (block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
 
         if template_id != EXECUTE_TRADE_REQUEST_TEMPLATE_ID {
             return Err(SbeError::UnknownTemplateId(template_id));
@@ -414,7 +585,6 @@ impl SubscribeQuotesRequest {
 }
 
 impl SbeEncode for SubscribeQuotesRequest {
-    #[must_use]
     fn encoded_size(&self) -> usize {
         MESSAGE_HEADER_SIZE + Self::BLOCK_LENGTH as usize
     }
@@ -447,7 +617,7 @@ impl SbeEncode for SubscribeQuotesRequest {
 
 impl SbeDecode for SubscribeQuotesRequest {
     fn decode(buffer: &[u8]) -> SbeResult<Self> {
-        let (block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
 
         if template_id != SUBSCRIBE_QUOTES_REQUEST_TEMPLATE_ID {
             return Err(SbeError::UnknownTemplateId(template_id));
@@ -483,7 +653,6 @@ impl SubscribeRfqStatusRequest {
 }
 
 impl SbeEncode for SubscribeRfqStatusRequest {
-    #[must_use]
     fn encoded_size(&self) -> usize {
         MESSAGE_HEADER_SIZE + Self::BLOCK_LENGTH as usize
     }
@@ -516,7 +685,7 @@ impl SbeEncode for SubscribeRfqStatusRequest {
 
 impl SbeDecode for SubscribeRfqStatusRequest {
     fn decode(buffer: &[u8]) -> SbeResult<Self> {
-        let (block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
 
         if template_id != SUBSCRIBE_RFQ_STATUS_REQUEST_TEMPLATE_ID {
             return Err(SbeError::UnknownTemplateId(template_id));
@@ -552,7 +721,6 @@ impl UnsubscribeRequest {
 }
 
 impl SbeEncode for UnsubscribeRequest {
-    #[must_use]
     fn encoded_size(&self) -> usize {
         MESSAGE_HEADER_SIZE + Self::BLOCK_LENGTH as usize
     }
@@ -585,7 +753,7 @@ impl SbeEncode for UnsubscribeRequest {
 
 impl SbeDecode for UnsubscribeRequest {
     fn decode(buffer: &[u8]) -> SbeResult<Self> {
-        let (block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
+        let (_block_length, template_id, _schema_id, _version) = decode_header(buffer)?;
 
         if template_id != UNSUBSCRIBE_REQUEST_TEMPLATE_ID {
             return Err(SbeError::UnknownTemplateId(template_id));
